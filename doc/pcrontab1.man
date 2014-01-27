@@ -1,0 +1,50 @@
+NAME
+  pcrontab - edit pcrontab(5) files used by pcron(1) and pcrond(1).
+
+SYNOPSIS
+  pcrontab -l|-e|-i
+  pcrontab -L|-E|-I
+
+DESCRIPTION
+  pcrontab(1) is a small script that is supposed to help managing the
+  pcrontab(5) files in the `~/.pcron' directory. The three modes
+  of operation are list, edit and import. It is not recommended to edit a
+  `crontab.ini' or `environment.sh' file by hand.
+
+  pcrontab(1) will open your current crontab or shell environment as a
+  temporary file in your text editor. After you have made your changes, the
+  file is checked for errors, and the pcron(1) process is sent a SIGHUP
+  signal being notified about the changed file.
+
+OPTIONS
+  --version             show program's version number and exit
+  -h, --help            show this help message and exit
+  -l, --list            list the user's crontab
+  -L, --list-environment  
+                        list the user's environment
+  -e, --edit            edit the user's crontab
+  -E, --edit-environment  
+                        edit the user's environment
+  -i, --import          import the user's crontab from stdin
+  -I, --import-environment  
+                        import the user's environment from stdin
+  -d NAME, --directory=NAME  
+                        the name of the pcron configuration directory relative to the user's home directory, default is .pcron
+  --editor=PATH         PATH to text editor, the default is $EDITOR
+  --no-backup           do not make backups
+
+ENVIRONMENT
+  EDITOR  
+  Path to the program to edit the .pcrontab file.
+
+FILES
+  ~/.pcron/  
+  ~/.pcron/crontab.ini  
+  ~/.pcron/environment.sh  
+
+SEE ALSO
+  pcrond(1), pcron(1), pcrontab(5)
+
+AUTHOR
+  Lars Gustaebel <lars@gustaebel.de>
+

@@ -1,0 +1,186 @@
+NAME
+pcrontab - the file format used by the files in ~/.pcron.
+
+CRONTAB FILE
+A user's crontab is placed at `~/.pcron/crontab.ini'. It must be edited using
+the pcrontab(1) command.
+
+The crontab file follows the .ini file format. Empty lines or lines starting
+with a `#' or a `;' will be ignored. It is possible to have continuation lines
+by indenting them.
+
+
+JOB DEFINITIONS
+The crontab file consists of one or more job definitions. A job definition
+begins with the job id between two brackets `[...]'. There is one special id
+`[default]' that contains default values for all job definitions. A job
+definition is a list of key-value-pairs one per line, both key and value
+separated by either a `:' or a `='.
+
+Jobs can be defined using the following variables:
+
+command: <shell_command>  
+  The shell command to execute. The shell that is used to execute the command
+  is the user's default shell as specified in `/etc/passwd'.
+
+active: <true/yes/1>|<false/no/0>  
+  Execute this job only if set to `true' (which is the default). This can be
+  used for example to temporarily suspend a job from being executed.
+
+time: <minute> <hour> <day of month> <month> <day of week>  
+  Declare points in time when the job will be executed. The format is the same
+  as in a traditional cron implementation. All five fields are mandatory.
+  Possible values are:
+    - <minutes>: 0-59
+    - <hours>: 0-23
+    - <day of month>: 1-31
+    - <month>: 1-12 or e.g. jan,feb,mar,apr,...,nov,dec
+    - <day of week>: 0-7 (0 and 7 being sunday) or sun,mon,tue,wed,thu,fri,sat
+
+    A field contains either a single value, a range, a comma-separated list of
+    values or ranges or a `*' character which stands for every possible value.
+    A single value is either a number or in case of <month> and <day of week> a
+    three-letter abbreviation of a name. A range consists of `<first>-<last>'
+    including <first> and <last>. Ranges as well as the `*' character can have
+    a step value appended in the form of `*/<step>' which means every <step>'th
+    value, e.g. `1-12/3' which resolves to `1,4,7,10'. It is also possible to
+    substract single values from ranges, e.g. `1-4~2~3' which resolves to
+    `1,4'.
+
+interval: <value>  
+  Define how often the job will be executed. Valid multipliers are `m' for
+  month (4 weeks), `w' for week, `d' for day, `h' for hour and none for
+  minutes, e.g. `1d12h30' meaning an interval of one day, twelve hours and
+  thirty minutes. Fractions are not allowed.
+
+post: <job-id> [<job-id> ...]  
+  Define after which other jobs this job will be executed.
+
+condition: <shell_command>  
+  The job will only be executed if a certain condition is met, i.e. the shell
+  command exits with status code 0. The evaluation takes place the moment the
+  job is actually going to start. Please note, that the shell command is
+  executed synchronously and blocks the entire pcron(1) process until it
+  returns, which is why you should keep its running time to a few seconds at
+  most.
+
+block: <block>  
+  Specify the name of a resource block. Execution of this job is delayed until
+  the resource block is released by the other job that holds it. A job's
+  default block is its own id.
+  When working with blocks it is likely to run into scheduling conflicts, see below.
+
+conflict: skip|mail|kill|postpone  
+  Define which action to take when there is a scheduling conflict, i.e. a job
+  is about to be scheduled while another instance of the same job is still
+  running or waiting for a block. The default action is `mail'.
+    - skip: do not schedule new instances as long as another instance is running
+    - mail: same as skip, but send a warning mail everytime a new instance is skipped
+    - kill: terminate the running instance and immediately start the new one, send a warning mail
+    - postpone: keep the new instance waiting for the previous instance to finish but
+      do not schedule further instances while there is one already waiting
+
+    In any case, a warning message for each conflict is written to the logfile.
+
+mail: never|always|error|output  
+  When to send the output of the job via mail, either `never', `always', if
+  an `error' occurred or if the job actually produced `output'.
+
+mailto: <email_address>  
+  Send the job output to this email address. It defaults to the user's name.
+
+sendmail: /usr/sbin/sendmail  
+  The path to the sendmail(1) command.
+
+loglevel: quiet|info|debug
+  Control the level of log messages from the pcron(1) process. `quiet' logs
+  errors and warnings only, `info' logs basic job scheduling information and
+  `debug' logs every detail of information.
+
+
+SCHEDULING
+It is allowed to let jobs have more than just one of `time', `interval' and
+`post' definitions. That way, it is possible to have a job run every 48 hours,
+but nevertheless every sunday at 12, or right after job `foo' has finished,
+whichever comes first.
+
+  [bar]
+  command:  echo "bar"
+  time:     0 12 * * sun
+  interval: 48h
+  post:     foo
+
+
+ENVIRONMENT FILE
+The environment is located at `~/.pcron/environment.sh' which is optional. Its
+purpose is to define shell variables or to specify setup code. This code is
+executed unconditionally for every job that is started.
+
+
+DEFAULT VARIABLES
+There are some predefined environment variables available for use in the
+crontab file.
+
+USER, LOGNAME  The alphanumeric name of the user who owns the current crontab file.
+
+UID  The numeric id of the user.
+
+GID  The numeric group id of the user.
+
+HOME  The home directory of the user as found in the `/etc/passwd' database.
+
+SHELL  The path to the shell of the user as found in the `/etc/passwd' database.
+
+PATH  Defaults to `/usr/local/bin:/usr/bin:/bin'. For the root user the PATH also contains the `/usr/local/sbin:/usr/sbin:/sbin' variants.
+
+PCRONDIR  The configuration directory of the current pcron(1) instance, usually `~/.pcron'.
+
+JOB_ID  The name of the current job.
+
+JOB_BLOCK  The resource block currently held.
+
+
+EXAMPLE
+
+Here is an example for an environment.sh file:
+
+  # ~/.pcron/environment.sh
+
+  BACKUPDIR=$HOME/backupdir
+  MIRROR=remote_host:/backup
+  DATE=$(date +%Y%m%d)
+
+And an example for a crontab file:
+
+  # ~/.pcron/crontab.ini example file
+
+  [default]
+  mail:       error
+
+  [tar]
+  command:    tar -c -v -z -f $BACKUPDIR/$DATE.tar.gz -C $HOME .
+  interval:   1d
+  block:      backup
+
+  [db]
+  command:    pg_dumpall > $BACKUPDIR/db-$DATE.sql
+  time:       0 0,12 * * *
+  block:      backup
+
+  [sync]
+  command:    rsync -a $BACKUPDIR $MIRROR
+  post:       tar
+  block:      backup
+  mail:       always
+
+
+FILES
+  ~/.pcron/crontab.ini
+  ~/.pcron/environment.sh
+
+SEE ALSO
+  pcrond(1), pcron(1), pcrontab(1)
+
+AUTHOR
+  Lars Gustaebel <lars@gustaebel.de>
+

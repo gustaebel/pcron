@@ -1,0 +1,162 @@
+#!/usr/bin/python
+# coding: utf8
+# -----------------------------------------------------------------------
+#
+# pcron - a periodic cron-like job scheduler.
+# Copyright (C) 2009-2014 Lars Gustäbel <lars@gustaebel.de>
+#
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
+#
+# -----------------------------------------------------------------------
+
+import sys
+import os
+import io
+import optparse
+import hashlib
+import tempfile
+import subprocess
+import shutil
+import signal
+
+from libpcron import __version__, __copyright__
+from libpcron.parser import CrontabParser, CrontabError, CrontabEmptyError
+
+
+def digest(path):
+    with open(path, "rb") as fileobj:
+        return hashlib.sha1(fileobj.read()).digest()
+
+
+def list_file(directory, name):
+    path = os.path.join(directory, name)
+
+    if not os.path.exists(path):
+        raise SystemExit("not found: %s" % path)
+    sys.stdout.write(open(path).read())
+
+
+def edit_file(directory, name):
+    path = os.path.join(directory, name)
+
+    fd, tmppath = tempfile.mkstemp(dir=directory, prefix=name, suffix=os.path.splitext(name)[1])
+    os.close(fd)
+    try:
+        with open(tmppath, "w") as tmp:
+            if opts.action.startswith("edit"):
+                if os.path.exists(path):
+                    with open(path, "r") as fileobj:
+                        tmp.write(fileobj.read())
+            else:
+                tmp.write(sys.stdin.read())
+
+        while True:
+            if opts.action.startswith("edit") and subprocess.call([opts.editor, tmppath]) != 0:
+                print("an error occurred, discarding ...")
+                return
+            elif os.path.exists(path) and digest(tmppath) == digest(path):
+                print("new %s is unchanged, discarding ..." % name)
+                return
+            else:
+                if name == "crontab":
+                    parser = CrontabParser(tmppath)
+                    try:
+                        parser.parse()
+
+                    except CrontabEmptyError:
+                        print("crontab is empty")
+                        return
+
+                    except CrontabError as e:
+                        print("error: %s" % e)
+                        if opts.action.startswith("edit"):
+                            try:
+                                input("Press a key to edit the file again (Ctrl-C to exit) ...")
+                            except KeyboardInterrupt:
+                                print()
+                                return
+                            continue
+                        else:
+                            return
+                if not opts.no_backup:
+                    if os.path.exists(path):
+                        shutil.copy(path, path + "~")
+                os.rename(tmppath, path)
+                print("installed new", name)
+                try:
+                    with open(os.path.join(directory, "pcron.pid")) as fileobj:
+                        pid = int(fileobj.read().strip())
+                except (OSError, ValueError):
+                    # FIXME so what?
+                    pass
+                else:
+                    try:
+                        os.kill(pid, signal.SIGHUP)
+                    except ProcessLookupError:
+                        pass
+                return
+
+    finally:
+        if os.path.exists(tmppath):
+            os.remove(tmppath)
+
+
+parser = optparse.OptionParser(usage="%prog [-l|-e] [<options>]",
+        version="%%prog %s - %s" % (__version__, __copyright__))
+parser.add_option("-l", "--list", action="store_const", const="list", dest="action",
+        help="list the crontab")
+parser.add_option("-L", "--list-environment", action="store_const", const="list_environment", dest="action",
+        help="list the environment")
+parser.add_option("-e", "--edit", action="store_const", const="edit", dest="action",
+        help="edit the  crontab")
+parser.add_option("-E", "--edit-environment", action="store_const", const="edit_environment", dest="action",
+        help="edit the environment")
+parser.add_option("-i", "--import", action="store_const", const="import", dest="action",
+        help="import the crontab from stdin")
+parser.add_option("-I", "--import-environment", action="store_const", const="import_environment", dest="action",
+        help="import the environment from stdin")
+parser.add_option("-d", "--directory", metavar="NAME", default="~/.pcron",
+        help="the name of the configuration directory, default is %default")
+parser.add_option("--editor", metavar="PATH", default=os.environ.get("EDITOR", "undefined"),
+        help="PATH to text editor, default is %default")
+parser.add_option("--no-backup", action="store_true", default=False,
+        help="do not make backups")
+opts, args = parser.parse_args()
+
+opts.directory = os.path.expanduser(opts.directory)
+
+if opts.action is None:
+    parser.error("please specify an action")
+
+if os.environ.get("HOME") is None:
+    parser.error("$HOME is undefined, please set it")
+
+if opts.action == "edit" and opts.editor == "undefined":
+    parser.error("$EDITOR is undefined, please supply the --editor option")
+
+if not os.path.exists(opts.directory):
+    os.makedirs(opts.directory)
+
+if opts.action.startswith("list"):
+    func = list_file
+else:
+    func = edit_file
+
+if opts.action.endswith("_environment"):
+    name = "environment.sh"
+else:
+    name = "crontab.ini"
+
+func(opts.directory, name)

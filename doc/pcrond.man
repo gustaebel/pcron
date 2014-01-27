@@ -1,0 +1,42 @@
+NAME
+  pcrond - execute shell commands on a regular basis.
+
+
+SYNOPSIS
+  pcrond [--groups GROUP1,GROUP2,...]
+
+
+DESCRIPTION
+  pcrond(1) is supposed to be started as a system daemon. Its job is to manage
+  individual pcron(1) instances for each user on the system who has a file
+  called `~/.pcron/crontab.ini' in her or his home directory. pcrond(1) checks
+  that every 15 minutes.
+
+
+OPTIONS
+  --version             show program's version number and exit
+  -h, --help            show this help message and exit
+  -g GROUPS, --groups=GROUPS  
+                        restrict pcrond to users that belong to one of GROUPS
+                        which is a comma-separated list of group names
+  -i N, --check-interval=N  
+                        check for users' crontabs every N minutes, default is
+                        15
+  -p NAME, --pid-path=NAME  
+                        the path of the pid file, default is
+                        /var/run/pcrond.pid
+  --pcron-path=NAME     the path to the pcron executable, default is
+                        /usr/bin/pcron
+
+
+FILES
+  /var/run/pcrond.pid
+
+
+SEE ALSO
+  pcron(1), pcrontab(1), pcrontab(5)
+
+
+AUTHOR
+  Lars Gustaebel <lars@gustaebel.de>
+

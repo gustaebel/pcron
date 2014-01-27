@@ -1,0 +1,103 @@
+#!/usr/bin/python3
+# coding: utf8
+# -----------------------------------------------------------------------
+#
+# pcron - a periodic cron-like job scheduler.
+# Copyright (C) 2009-2014 Lars Gustäbel <lars@gustaebel.de>
+#
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
+#
+# -----------------------------------------------------------------------
+
+import sys
+import os
+import time
+import pwd
+import grp
+import logging
+import optparse
+import subprocess
+import signal
+
+from libpcron import __version__, __copyright__
+from libpcron.shared import DaemonContext
+from libpcron.scheduler import Scheduler
+
+
+if __name__ == "__main__":
+    parser = optparse.OptionParser(version="%%prog %s - %s" % (__version__, __copyright__))
+    parser.add_option("-g", "--groups", metavar="GROUPS",
+            help="restrict pcrond to users that belong to one of GROUPS which is a comma-separated list of group names")
+    parser.add_option("-i", "--check-interval", type="int", metavar="N", default=15,
+            help="check for users' crontabs every N minutes, default is %default")
+    parser.add_option("-p", "--pid-path", metavar="NAME", default="/var/run/pcrond.pid",
+            help="the path of the pid file, default is %default")
+    parser.add_option("--pcron-path", metavar="NAME", default="/usr/bin/pcron",
+            help="the path to the pcron executable, default is %default")
+    opts, args = parser.parse_args()
+
+    if opts.groups is not None:
+        users = {}
+        for group in opts.groups.split(","):
+            try:
+                record = grp.getgrnam(group.strip())
+            except KeyError:
+                raise SystemExit("group %s does not exist" % group)
+
+            for user in record.gr_mem:
+                if user not in users:
+                    try:
+                        users[user] = pwd.getpwnam(user)
+                    except KeyError:
+                        raise SystemExit("user %s does not exist" % user)
+
+    else:
+        users = dict((record.pw_name, record) for record in pwd.getpwall())
+
+    with DaemonContext(opts.pid_path):
+        def signal_handler(signum, frame):
+            raise SystemExit(1)
+
+        signal.signal(signal.SIGINT, signal_handler)
+        signal.signal(signal.SIGTERM, signal_handler)
+
+        running = set()
+        try:
+            while True:
+                for user, record in sorted(users.items()):
+                    if user in running:
+                        continue
+
+                    path = os.path.join(record.pw_dir, ".pcron", "crontab.ini")
+                    if os.path.exists(path):
+                        subprocess.call(["/bin/su", "--login", user, "--command", opts.pcron_path],
+                                stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
+                        running.add(user)
+
+                time.sleep(opts.check_interval * 60)
+
+        finally:
+            for user in running:
+                record = users[user]
+                path = os.path.join(record.pw_dir, ".pcron", "pcron.pid")
+
+                try:
+                    with open(path, "r") as fileobj:
+                        pid = int(fileobj.read().strip())
+                except (OSError, ValueError):
+                    pass
+                else:
+                    os.kill(pid, signal.SIGTERM)
+

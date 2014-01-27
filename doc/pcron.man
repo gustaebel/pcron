@@ -1,0 +1,97 @@
+NAME
+  pcron - execute shell commands on a regular basis.
+
+SYNOPSIS
+  pcron [--foreground] [--verbose|--debug]
+
+DESCRIPTION
+  pcron(1) is usually not explicitly started by the user. Instead, for each
+  user on the system an individual instance is forked by the system-wide
+  pcrond(1) daemon.
+
+  If however pcron(1) is started independently, it instantly goes to the
+  background unless the --foreground option is specified. On startup, pcron(1)
+  loads the pcrontab(5) file that is usually located in `~/.pcron/crontab.ini'.
+  This file should not be edited by hand but should be maintained using the
+  pcrontab(1) command. Otherwise pcron(1) will not be notified when it
+  changes.
+
+  The pcrontab(5) file contains instructions that tell pcron(1) which shell
+  commands (or "jobs") the user wants to execute at which time of day or interval
+  and under which conditions.
+
+DIFFERENCES FROM OTHER CRON IMPLEMENTATIONS
+  pcron(1) is supposed to a full cron implementation and is different in some
+  ways from others like fcron and Vixie cron. Users familiar to using cron
+  daemons will find it easy to make the switch.
+
+  - Its pcrontab(5) files are not compatible to other cron implementations.
+    The traditional line based format was replaced in favor of a section and
+    key-value-pair based format (.ini style format).
+
+  - There are three kinds of scheduling definitions that can also be mixed:
+    jobs that are scheduled at particular points in time, jobs that are
+    carried out after certain time intervals, and jobs that act as direct
+    follow-ups to other jobs. On top of that, the execution of jobs can be
+    fine-tuned using conditions.
+
+  - The design of pcron(1) makes it impossible for two instances of the same
+    job to run simultaneously. For time-based jobs this means that instead of
+    being started in parallel, jobs will be discarded.
+
+  - pcron(1) offers user-defined blocks that enforce serial execution of
+    different jobs preventing them from cumulating and overusing processor
+    power or slow resources. A job that requires a block that is already held
+    by another job is delayed as long as that job is running. Jobs waiting
+    for the same block are guaranteed to be executed in the same order they
+    acquired the block.
+
+  - pcron(1) saves its internal state between sessions and system reboots,
+    i.e. interval-based jobs that would have been run during a downtime are
+    started right away the next time pcron(1) is started up again.
+
+  - Every job is executed in the context of an optional file `environment.sh'
+    that has to be created and maintained with the pcrontab(1) command. It is
+    a shell script whose instructions are added right before the job's shell
+    command. `environment.sh' can be used for setup code or defining shell
+    variables or functions for the command to use.
+
+  - The `~/.pcron' directory contains a file `logfile.txt' that all
+    log messages are written to.
+
+
+OPTIONS
+  --version             show program's version number and exit
+  -h, --help            show this help message and exit
+  -f, --foreground      do not fork to the background and write log messages
+                        to stderr
+  -d NAME, --directory=NAME  
+                        the name of the configuration directory, default is
+                        ~/.pcron
+
+
+LOGGING
+pcron(1) writes all log messages to `~/.pcron/logfile.txt'. The level of
+verbosity can be configured in the `~/.pcron/crontab.ini' file. The debug mode
+produces lots of messages and is possibly not suited for everyday use, but it
+allows fine-grained monitoring the details of job scheduling inside the pcron
+process.
+
+pcron(1) will dump its internal scheduling state to the logfile on the next
+full minute if it receives a SIGUSR1 signal. Your `loglevel' setting must be
+either `info' or `debug'.
+
+
+FILES
+  ~/.pcron/crontab.ini  
+  ~/.pcron/environment.sh  
+  ~/.pcron/logfile.txt  
+
+
+SEE ALSO
+  pcrond(1), pcrontab(1), pcrontab(5)
+
+
+AUTHOR
+  Lars Gustaebel <lars@gustaebel.de>
+
