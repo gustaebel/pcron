@@ -148,7 +148,7 @@ class Scheduler(object):
     # === Jobs
     #
     def add_job(self, job_id, info, environment):
-        job = Job(self.bus, self.record.pw_name, self.environ, environment)
+        job = Job(self.bus, self.record.pw_name, self.environ.copy(), environment)
         job.update(info)
         self.jobs[job_id] = job
         task = job.setup()
