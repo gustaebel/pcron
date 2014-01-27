@@ -192,11 +192,20 @@ class Job(object):
                 self.bus.post("block", block=self.block, job=self.id)
 
             elif event.name == "start" and event.job == self.id:
-                self.bus.post("started", job=self.id)
-
                 self.last_run = datetime.datetime.now()
-                if self.condition is None or self.test_condition():
+
+                if self.condition is not None:
+                    run = self.test_condition()
+                    self.log.debug("test condition: %s", run)
+                else:
+                    run = True
+
+                if run:
+                    self.bus.post("started", job=self.id)
                     self.start()
+                else:
+                    self.state = SLEEPING
+                    self.bus.post("unblock", block=self.block)
 
     #
     # === Scheduling / Execution
