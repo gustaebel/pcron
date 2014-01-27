@@ -96,9 +96,9 @@ class Scheduler(object):
     def load_state(self):
         try:
             with open(self.state_path, "rb") as fileobj:
-                for job_id, last_run in pickle.load(fileobj).items():
+                for job_id, next_run in pickle.load(fileobj).items():
                     try:
-                        self.jobs[job_id].last_run = last_run
+                        self.jobs[job_id].next_run = next_run
                     except KeyError:
                         continue
         except OSError as exc:
@@ -108,7 +108,7 @@ class Scheduler(object):
         try:
             state = {}
             for job_id, job in self.jobs.items():
-                state[job_id] = job.last_run
+                state[job_id] = job.next_run
             with AtomicFile(self.state_path) as fileobj:
                 pickle.dump(state, fileobj)
         except OSError as exc:
