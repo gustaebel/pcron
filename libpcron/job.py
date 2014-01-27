@@ -340,7 +340,7 @@ class Job(object):
         self.log.debug("send mail to %s", self.mailto)
         try:
             process = subprocess.Popen([self.sendmail, self.mailto], stdin=subprocess.PIPE)
-            stdin = io.TextIOWrapper(process.stdin)
+            stdin = io.TextIOWrapper(process.stdin, errors="replace")
             stdin.write(text)
             for line in payload:
                 stdin.write(line)
