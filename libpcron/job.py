@@ -121,7 +121,7 @@ class Job(object):
     def check(cls, definition):
         for key in cls.mandatory_keys:
             if key not in definition:
-                raise CrontabError("%s: mandatory variable %r not found" % definition["id"], key)
+                raise CrontabError("%s: mandatory variable %r not found" % (definition["id"], key))
 
         if not set(definition.keys()) & set(cls.scheduling_keys):
             raise CrontabError("%s: missing scheduling information" % definition["id"])
