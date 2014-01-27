@@ -151,7 +151,7 @@ class Job(object):
         self.environ["JOB_ID"] = self.id
         self.environ["JOB_BLOCK"] = self.block
 
-        self.log = logging.getLogger("@" + self.id)
+        self.log = logging.getLogger(self.id)
 
         self.calculate_next_run()
 

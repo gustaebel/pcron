@@ -76,25 +76,26 @@ class BlockManager(object):
     def __init__(self):
         self.blocks = set()
         self.waiters = {}
-        self.log = logging.getLogger("block")
 
     def block(self, name, job_id):
+        log = logging.getLogger("@" + name)
         if name in self.blocks:
             assert job_id not in self.waiters.get(name, [])
-            self.log.debug("#%s: postpone %s", name, job_id)
+            log.debug("postpone %s", job_id)
             self.waiters.setdefault(name, []).append(job_id)
             return False
         else:
-            self.log.debug("#%s: acquired by %s", name, job_id)
+            log.debug("acquired by %s", job_id)
             self.blocks.add(name)
             return True
 
     def unblock(self, name):
+        log = logging.getLogger("@" + name)
         if name in self.waiters and self.waiters[name]:
             job_id = self.waiters[name].pop(0)
-            self.log.debug("#%s: resume %s", name, job_id)
+            log.debug("resume %s", job_id)
             return job_id
         else:
-            self.log.debug("#%s: released", name)
+            log.debug("released")
             self.blocks.remove(name)
 

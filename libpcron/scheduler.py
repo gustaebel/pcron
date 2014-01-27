@@ -76,7 +76,7 @@ class Scheduler(object):
     def init_logging(self):
         logging.basicConfig(
                 level=extract_loglevel_from_crontab(self.crontab_path),
-                format="%(asctime)s  %(levelname)-7s  %(name)-9s  %(message)s",
+                format="%(asctime)s  %(levelname)-7s  %(name)-10s  %(message)s",
                 filename=os.path.join(self.directory, "logfile.txt") if self.opts.daemon else None)
 
         self.log = logging.getLogger("main")
