@@ -111,7 +111,7 @@ class Runner(object):
             self.size = os.path.getsize(self.output_name)
 
             # Reopen the logfile for reading.
-            self.output = open(self.output_name)
+            self.output = open(self.output_name, "rb")
 
             self.finished = True
             return True

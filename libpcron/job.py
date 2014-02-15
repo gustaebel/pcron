@@ -345,11 +345,10 @@ class Job(object):
         self.log.debug("send mail to %s", self.mailto)
         try:
             process = subprocess.Popen([self.sendmail, self.mailto], stdin=subprocess.PIPE)
-            stdin = io.TextIOWrapper(process.stdin, errors="replace")
-            stdin.write(text)
+            process.stdin.write(text.encode("utf8"))
             for line in payload:
-                stdin.write(line)
-            stdin.close()
+                process.stdin.write(line)
+            process.stdin.close()
         except OSError as exc:
             self.log.error("the following error occurred using %s", self.sendmail)
             self.log.error(str(exc))
