@@ -38,14 +38,14 @@ SIGNAL_NAMES = dict((getattr(signal, name), name) \
 MAIL_INFO = """\
 From: pcron <%(username)s>
 To: %(mailto)s
-Subject: pcron: %(schedule)s %(job)s
+Subject: pcron: %(timestamp)s %(job)s
 
 """
 
 MAIL_ERROR = """\
 From: pcron <%(username)s>
 To: %(mailto)s
-Subject: pcron: ERROR! %(schedule)s %(job)s
+Subject: pcron: ERROR! %(timestamp)s %(job)s
 
 Job %(job)s exited with error code %(exitcode)s.
 
@@ -54,7 +54,7 @@ Job %(job)s exited with error code %(exitcode)s.
 MAIL_KILLED = """\
 From: pcron <%(username)s>
 To: %(mailto)s
-Subject: pcron: KILLED! %(schedule)s %(job)s
+Subject: pcron: KILLED! %(timestamp)s %(job)s
 
 Job %(job)s was killed by signal %(signal)s.
 
@@ -63,7 +63,7 @@ Job %(job)s was killed by signal %(signal)s.
 MAIL_SKIP_RUNNING = """\
 From: pcron <%(username)s>
 To: %(mailto)s
-Subject: pcron: WARNING! %(schedule)s %(job)s
+Subject: pcron: WARNING! %(timestamp)s %(job)s
 
 The scheduled run for job %(job)s was skipped because another instance
 of the job is still running.
@@ -76,7 +76,7 @@ The process is running with pid %(pid)s.
 MAIL_SKIP_WAITING = """\
 From: pcron <%(username)s>
 To: %(mailto)s
-Subject: pcron: WARNING! %(schedule)s %(job)s
+Subject: pcron: WARNING! %(timestamp)s %(job)s
 
 The scheduled run for job %(job)s was skipped because another instance
 of the job is already waiting to start.
@@ -325,11 +325,16 @@ class Job(object):
 
     def send_message(self, text, payload=(), _info=None):
         # Collect required information.
+        if self.scheduled_run > datetime.datetime.min:
+            timestamp = self.scheduled_run
+        else:
+            timestamp = self.last_run
+
         info = {
             "job":      str(self),
             "mailto":   self.mailto,
             "username": self.username,
-            "schedule": format_time(self.scheduled_run),
+            "timestamp": format_time(timestamp),
             "command":  self.command
         }
         if _info is not None:
