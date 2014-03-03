@@ -239,6 +239,8 @@ class Scheduler(object):
         """
         jobs = {}
         for job in self.jobs.values():
+            if job.state == WAITING and job.next_run < datetime.datetime.now():
+                continue
             timestamp = job.next_run.timestamp()
             jobs.setdefault(timestamp, []).append(job)
 
