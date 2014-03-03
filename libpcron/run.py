@@ -41,6 +41,7 @@ class Runner(object):
         self.environ = environ
         self.init_code = init_code
         self.shell = environ["SHELL"]
+        self.process = None
         self.output = None
 
         # Create a temporary file for the command output.
@@ -101,7 +102,7 @@ class Runner(object):
         if self.finished:
             return True
 
-        if self.process.poll() is None:
+        if self.process is not None and self.process.poll() is None:
             return False
         else:
             # Save the time when the process ended.
