@@ -219,6 +219,7 @@ class Job(object):
             elif self.conflict in ("skip", "mail"):
                 if self.conflict == "mail":
                     self.send_message(MAIL_SKIP_RUNNING, _info={"pid": self.runner.get_pid()})
+                self.scheduled_run = datetime.datetime.now()
                 self.calculate_next_run()
 
         elif self.state == WAITING:
