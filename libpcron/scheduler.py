@@ -26,6 +26,7 @@ import time
 import signal
 import logging
 import pickle
+import datetime
 
 from libpcron.shared import AtomicFile, Interrupt, sleep
 from libpcron.shared import RUNNING, WAITING, SLEEPING
