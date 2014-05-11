@@ -93,7 +93,12 @@ class DaemonContext(object):
         except OSError as exc:
             raise SystemExit(str(exc))
         else:
-            raise SystemExit("%s seems to be running on pid %s" % (os.path.basename(sys.argv[0]), pid))
+            try:
+                os.kill(pid, 0)
+            except OSError:
+                pass
+            else:
+                raise SystemExit("%s seems to be running on pid %s" % (os.path.basename(sys.argv[0]), pid))
 
         if self.daemonize:
             try:
