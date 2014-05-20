@@ -41,11 +41,10 @@ kwargs = {
     "version":      version,
     "author":       "Lars Gustäbel",
     "author_email": "lars@gustaebel.de",
-    "url":          "http://www.gustaebel.de/lars/pcron/",
+    "url":          "http://github.com/gustaebel/pcron/",
     "description":  "a periodic job scheduler",
     "long_description":
                     "pcron is a periodic job scheduler inspired by fcron",
-    "download_url": "http://www.gustaebel.de/lars/pcron/pcron-%s.tar.gz" % version,
     "license":      "GPL",
     "classifiers":  ["Development Status :: 3 - Alpha",
                     "Environment :: Console",
