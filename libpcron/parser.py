@@ -75,6 +75,8 @@ class CrontabParser(object):
             self.parser.read([self.path])
         except configparser.DuplicateSectionError as exc:
             raise CrontabError("duplicate job %s" % exc.section)
+        except configparser.DuplicateOptionError as exc:
+            raise CrontabError("duplicate option %s in job %s" % (exc.option, exc.section))
 
         if not self.parser.sections():
             raise CrontabEmptyError("crontab is empty")

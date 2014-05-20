@@ -34,6 +34,9 @@ import signal
 from libpcron import __version__, __copyright__
 from libpcron.parser import CrontabParser, CrontabError, CrontabEmptyError
 
+ENVIRONMENT_NAME = "environment.sh"
+CRONTAB_NAME = "crontab.ini"
+
 
 def digest(path):
     with open(path, "rb") as fileobj:
@@ -70,7 +73,7 @@ def edit_file(directory, name):
                 print("new %s is unchanged, discarding ..." % name)
                 return
             else:
-                if name == "crontab":
+                if name == CRONTAB_NAME:
                     parser = CrontabParser(tmppath)
                     try:
                         parser.parse()
@@ -155,8 +158,8 @@ else:
     func = edit_file
 
 if opts.action.endswith("_environment"):
-    name = "environment.sh"
+    name = ENVIRONMENT_NAME
 else:
-    name = "crontab.ini"
+    name = CRONTAB_NAME
 
 func(opts.directory, name)
