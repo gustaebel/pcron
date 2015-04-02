@@ -28,6 +28,7 @@ import logging
 import pickle
 import datetime
 
+from libpcron import ENVIRONMENT_NAME, CRONTAB_NAME
 from libpcron.shared import AtomicFile, Interrupt, sleep
 from libpcron.shared import RUNNING, WAITING, SLEEPING
 from libpcron.time import format_time
@@ -42,37 +43,44 @@ class Scheduler(object):
         self.opts = opts
 
         self.directory = self.opts.directory
-        self.record = pwd.getpwuid(os.getuid())
 
-        self.crontab_path = os.path.join(self.directory, "crontab.ini")
+        self.crontab_path = os.path.join(self.directory, CRONTAB_NAME)
         self.state_path = os.path.join(self.directory, "state.db")
-        self.environ_path = os.path.join(self.directory, "environment.sh")
+        self.environ_path = os.path.join(self.directory, ENVIRONMENT_NAME)
 
         self.bus = Bus()
         self.jobs = {}
         self.running = True
 
-        # Prepare the basic environment and default variables
-        # for the jobs.
-        self.environ = {
-            "USER":     self.record.pw_name,
-            "LOGNAME":  self.record.pw_name,
-            "UID":      str(self.record.pw_uid),
-            "GID":      str(self.record.pw_gid),
-            "HOME":     self.record.pw_dir,
-            "SHELL":    self.record.pw_shell,
-            "PCRONDIR": self.directory
-        }
-        if self.record.pw_name == "root":
-            self.environ["PATH"] = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-        else:
-            self.environ["PATH"] = "/usr/local/bin:/usr/bin:/bin"
+        self.record, self.environ = self.create_environ(self.directory)
 
         self.init_logging()
         self.init_signal_handlers()
 
         self.load()
         self.load_state()
+
+    @staticmethod
+    def create_environ(directory):
+        record = pwd.getpwuid(os.getuid())
+
+        # Prepare the basic environment and default variables
+        # for the jobs.
+        environ = {
+            "USER":     record.pw_name,
+            "LOGNAME":  record.pw_name,
+            "UID":      str(record.pw_uid),
+            "GID":      str(record.pw_gid),
+            "HOME":     record.pw_dir,
+            "SHELL":    record.pw_shell,
+            "PCRONDIR": directory
+        }
+        if record.pw_name == "root":
+            environ["PATH"] = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+        else:
+            environ["PATH"] = "/usr/local/bin:/usr/bin:/bin"
+
+        return record, environ
 
     def init_logging(self):
         logging.basicConfig(
@@ -126,10 +134,10 @@ class Scheduler(object):
 
     def load_environment(self):
         try:
-            with open(os.path.join(self.directory, "environment.sh")) as fileobj:
+            with open(os.path.join(self.directory, ENVIRONMENT_NAME)) as fileobj:
                 return fileobj.read()
         except FileNotFoundError:
-            self.log.debug("%s/environment.sh not found", self.directory)
+            self.log.debug("%s/%s not found", self.directory, ENVIRONMENT_NAME)
         except OSError as exc:
             self.log.error(str(exc))
         return ""
@@ -164,6 +172,7 @@ class Scheduler(object):
         # Evaluate individual job definitions.
         for job_id, info in crontab.items():
             job = self.jobs.get(job_id)
+
             if job is None:
                 # Create a new job.
                 self.log.info("create job %s", job_id)

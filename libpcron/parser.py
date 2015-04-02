@@ -97,10 +97,10 @@ class CrontabParser(object):
 
                 job[option] = converter(value)
 
-            if job.pop("active", True):
-                job["id"] = section
-                Job.check(job)
-                jobs[job["id"]] = job
+            job["active"] = job.get("active", True)
+            job["id"] = section
+            Job.check(job)
+            jobs[job["id"]] = job
 
         return jobs
 

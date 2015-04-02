@@ -23,3 +23,6 @@
 __version__ = "0.4-pre1"
 __copyright__ = "(C) 2009-2014 Lars Gustäbel <lars@gustaebel.de>"
 
+ENVIRONMENT_NAME = "environment.sh"
+CRONTAB_NAME = "crontab.ini"
+

@@ -31,7 +31,7 @@ import optparse
 import subprocess
 import signal
 
-from libpcron import __version__, __copyright__
+from libpcron import __version__, __copyright__, CRONTAB_NAME
 from libpcron.shared import DaemonContext
 from libpcron.scheduler import Scheduler
 
@@ -80,7 +80,7 @@ if __name__ == "__main__":
                     if user in running:
                         continue
 
-                    path = os.path.join(record.pw_dir, ".pcron", "crontab.ini")
+                    path = os.path.join(record.pw_dir, ".pcron", CRONTAB_NAME)
                     if os.path.exists(path):
                         subprocess.call(["/bin/su", "--login", user, "--command", opts.pcron_path],
                                 stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)

@@ -31,11 +31,10 @@ import subprocess
 import shutil
 import signal
 
-from libpcron import __version__, __copyright__
+from libpcron import __version__, __copyright__, ENVIRONMENT_NAME, CRONTAB_NAME
 from libpcron.parser import CrontabParser, CrontabError, CrontabEmptyError
-
-ENVIRONMENT_NAME = "environment.sh"
-CRONTAB_NAME = "crontab.ini"
+from libpcron.scheduler import Scheduler
+from libpcron.run import SH_CODE
 
 
 def digest(path):
@@ -116,6 +115,36 @@ def edit_file(directory, name):
             os.remove(tmppath)
 
 
+def execute(directory, name):
+    parser = CrontabParser(os.path.join(directory, CRONTAB_NAME))
+    try:
+        jobs = parser.parse()
+    except CrontabEmptyError:
+        print("crontab is empty")
+        return
+
+    job = jobs.get(name)
+    if job is None:
+        raise SystemExit("no such job %r" % name)
+
+    if job["active"]:
+        print("WARNING: job %r is not marked as inactive!" % name, file=sys.stderr)
+
+    record, environ = Scheduler.create_environ(directory)
+
+    with open(os.path.join(directory, ENVIRONMENT_NAME)) as fobj:
+        environment = fobj.read()
+
+    with tempfile.NamedTemporaryFile(prefix="tmp.pcron-cmd.", mode="w", delete=False) as script:
+        script.write(SH_CODE % (environment, job["command"]))
+
+    try:
+        proc = subprocess.Popen([environ["SHELL"], script.name], env=environ)
+        sys.exit(proc.wait())
+    finally:
+        os.remove(script.name)
+
+
 parser = optparse.OptionParser(usage="%prog [-l|-e] [<options>]",
         version="%%prog %s - %s" % (__version__, __copyright__))
 parser.add_option("-l", "--list", action="store_const", const="list", dest="action",
@@ -130,6 +159,8 @@ parser.add_option("-i", "--import", action="store_const", const="import", dest="
         help="import the crontab from stdin")
 parser.add_option("-I", "--import-environment", action="store_const", const="import_environment", dest="action",
         help="import the environment from stdin")
+parser.add_option("-x", "--execute", action="store_const", const="execute", dest="action",
+        help="execute a job from the crontab in the current shell")
 parser.add_option("-d", "--directory", metavar="NAME", default="~/.pcron",
         help="the name of the configuration directory, default is %default")
 parser.add_option("--editor", metavar="PATH", default=os.environ.get("EDITOR", "undefined"),
@@ -152,6 +183,11 @@ if opts.action == "edit" and opts.editor == "undefined":
 if not os.path.exists(opts.directory):
     os.makedirs(opts.directory)
 
+if opts.action == "execute":
+    if len(args) != 1:
+        parser.error("one <jobspec> argument expected")
+    execute(opts.directory, args[0])
+
 if opts.action.startswith("list"):
     func = list_file
 else:
@@ -163,3 +199,4 @@ else:
     name = CRONTAB_NAME
 
 func(opts.directory, name)
+

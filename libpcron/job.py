@@ -91,7 +91,7 @@ class Job(object):
 
     duration = datetime.timedelta(seconds=0)
 
-    mandatory_keys = ("id", "command")
+    mandatory_keys = ("id", "command", "active")
     scheduling_keys = ("time", "interval", "post")
     allowed_keys = ("block", "condition", "mail", "mailto", "sendmail", "conflict")
 
