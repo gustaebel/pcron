@@ -225,6 +225,7 @@ class Scheduler(object):
 
     def dump(self):
         # FIXME improve
+        # FIXME support inactive jobs.
         for job in sorted(self.jobs.values(), key=lambda j: j.last_run):
             if job.state != RUNNING:
                 continue
@@ -249,7 +250,7 @@ class Scheduler(object):
         """
         jobs = {}
         for job in self.jobs.values():
-            if job.state == WAITING and job.next_run < datetime.datetime.now():
+            if not job.active or (job.state == WAITING and job.next_run < datetime.datetime.now()):
                 continue
             timestamp = job.next_run.timestamp()
             jobs.setdefault(timestamp, []).append(job)

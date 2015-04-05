@@ -134,6 +134,8 @@ class Job(object):
         # pylint:disable=attribute-defined-outside-init
         self.id = definition["id"]
 
+        self.active = definition["active"]
+
         self.command = definition["command"]
         self.time = definition.get("time", None)
         self.interval = definition.get("interval", None)
