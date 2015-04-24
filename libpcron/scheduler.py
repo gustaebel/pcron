@@ -225,21 +225,25 @@ class Scheduler(object):
 
     def dump(self):
         # FIXME improve
-        # FIXME support inactive jobs.
         for job in sorted(self.jobs.values(), key=lambda j: j.last_run):
-            if job.state != RUNNING:
+            if not job.active or job.state != RUNNING:
                 continue
-            self.log.info("%s  R  %s", format_time(job.last_run), job.id)
+            self.log.info("[running]   %s  %s", format_time(job.last_run), job.id)
 
         for job in sorted(self.jobs.values(), key=lambda j: j.scheduled_run):
-            if job.state != WAITING:
+            if not job.active or job.state != WAITING:
                 continue
-            self.log.info("%s  W  %s", format_time(job.scheduled_run), job.id)
+            self.log.info("[waiting]   %s  %s", format_time(job.scheduled_run), job.id)
 
         for job in sorted(self.jobs.values(), key=lambda j: j.next_run):
-            if job.state != SLEEPING:
+            if not job.active or job.state != SLEEPING:
                 continue
-            self.log.info("%s  -  %s", format_time(job.next_run), job.id)
+            self.log.info("[sleeping]  %s  %s", format_time(job.next_run), job.id)
+
+        for job in self.jobs.values():
+            if job.active:
+                continue
+            self.log.info("[inactive]  %s  %s", format_time(datetime.datetime.max), job.id)
 
     #
     # === Scheduling
