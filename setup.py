@@ -26,8 +26,8 @@ import sys
 import os
 import re
 
-if sys.version_info[:2] < (2, 5):
-    raise SystemExit("Python >=2.6 required")
+if sys.version_info[:2] < (3, 2):
+    raise SystemExit("Python >=3.2 required")
 
 from distutils.core import setup
 
@@ -52,7 +52,7 @@ kwargs = {
                     "License :: OSI Approved :: GNU General Public License (GPL)",
                     "Natural Language :: English",
                     "Operating System :: Unix",
-                    "Programming Language :: Python",
+                    "Programming Language :: Python :: 3",
                     "Topic :: Utilities"],
     "packages":     ["libpcron"],
     "scripts":      ["pcrond", "pcron", "pcrontab"]
