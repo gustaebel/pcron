@@ -26,10 +26,10 @@ import subprocess
 import logging
 import signal
 
-from libpcron.shared import RUNNING, WAITING, SLEEPING
-from libpcron.time import format_time
-from libpcron.run import Runner, RunnerError
-from libpcron.shared import CrontabError
+from .shared import RUNNING, WAITING, SLEEPING
+from .time import format_time
+from .run import Runner, RunnerError
+from .shared import CrontabError
 
 SIGNAL_NAMES = dict((getattr(signal, name), name) \
     for name in dir(signal) if name.startswith("SIG") and "_" not in name)

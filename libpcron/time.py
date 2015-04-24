@@ -23,7 +23,7 @@
 import re
 import datetime
 
-from libpcron.shared import ParserError
+from .shared import ParserError
 
 
 class TimeSpecError(ParserError):

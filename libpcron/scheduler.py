@@ -28,13 +28,13 @@ import logging
 import pickle
 import datetime
 
-from libpcron import ENVIRONMENT_NAME, CRONTAB_NAME
-from libpcron.shared import AtomicFile, Interrupt, sleep
-from libpcron.shared import RUNNING, WAITING, SLEEPING
-from libpcron.time import format_time
-from libpcron.parser import CrontabParser, CrontabError, extract_loglevel_from_crontab
-from libpcron.event import Bus
-from libpcron.job import Job
+from . import ENVIRONMENT_NAME, CRONTAB_NAME
+from .shared import AtomicFile, Interrupt, sleep
+from .shared import RUNNING, WAITING, SLEEPING
+from .time import format_time
+from .parser import CrontabParser, CrontabError, extract_loglevel_from_crontab
+from .event import Bus
+from .job import Job
 
 
 class Scheduler(object):

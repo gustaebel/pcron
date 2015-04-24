@@ -25,9 +25,9 @@ import re
 import configparser
 import logging
 
-from libpcron.shared import CrontabError, CrontabEmptyError
-from libpcron.time import TimeSpec, TimeSpecError, IntervalSpec, IntervalSpecError
-from libpcron.job import Job
+from .shared import CrontabError, CrontabEmptyError
+from .time import TimeSpec, TimeSpecError, IntervalSpec, IntervalSpecError
+from .job import Job
 
 
 def extract_loglevel_from_crontab(path):
