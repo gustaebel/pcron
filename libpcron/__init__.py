@@ -2,7 +2,7 @@
 # -----------------------------------------------------------------------
 #
 # pcron - a periodic cron-like job scheduler.
-# Copyright (C) 2009-2014 Lars Gustäbel <lars@gustaebel.de>
+# Copyright (C) 2009-2015 Lars Gustäbel <lars@gustaebel.de>
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -20,8 +20,8 @@
 #
 # -----------------------------------------------------------------------
 
-__version__ = "0.4-pre1"
-__copyright__ = "(C) 2009-2014 Lars Gustäbel <lars@gustaebel.de>"
+__version__ = "0.4-pre2"
+__copyright__ = "(C) 2009-2015 Lars Gustäbel <lars@gustaebel.de>"
 
 ENVIRONMENT_NAME = "environment.sh"
 CRONTAB_NAME = "crontab.ini"
