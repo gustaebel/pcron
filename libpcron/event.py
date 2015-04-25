@@ -34,7 +34,7 @@ class Event(object):
 class Bus(object):
 
     def __init__(self):
-        self.inq = []
+        self.queue = []
         self.tasks = {}
         self.blockmanager = BlockManager()
 
@@ -42,17 +42,13 @@ class Bus(object):
         assert job_id not in self.tasks
         self.tasks[job_id] = task
 
-    def unregister(self, job_id):
-        assert job_id in self.tasks
-        self.tasks.pop(job_id)
-
     def post(self, name, **kwargs):
-        self.inq.append(Event(name, **kwargs))
+        self.queue.append(Event(name, **kwargs))
 
     def get_event(self):
-        if not self.inq:
+        if not self.queue:
             return None
-        return self.inq.pop(0)
+        return self.queue.pop(0)
 
     def process_event(self, event):
         for job_id, task in sorted(self.tasks.items()):
@@ -66,36 +62,43 @@ class Bus(object):
                 self.post("start", job=event.job)
 
         elif event.name == "unblock":
-            job_id = self.blockmanager.unblock(event.block)
+            job_id = self.blockmanager.unblock(event.block, event.job)
             if job_id is not None:
                 self.post("start", job=job_id)
 
 
 class BlockManager(object):
+    """BlockManager keeps track of currently active blocks and those jobs
+       waiting for them to be released.
+    """
 
     def __init__(self):
-        self.blocks = set()
-        self.waiters = {}
+        self.blocks = {}
 
     def block(self, name, job_id):
         log = logging.getLogger("@" + name)
-        if name in self.blocks:
-            assert job_id not in self.waiters.get(name, [])
-            log.debug("postpone %s", job_id)
-            self.waiters.setdefault(name, []).append(job_id)
-            return False
-        else:
-            log.debug("acquired by %s", job_id)
-            self.blocks.add(name)
-            return True
 
-    def unblock(self, name):
-        log = logging.getLogger("@" + name)
-        if name in self.waiters and self.waiters[name]:
-            job_id = self.waiters[name].pop(0)
-            log.debug("resume %s", job_id)
-            return job_id
+        jobs = self.blocks.get(name, [])
+        assert job_id not in jobs
+
+        if not jobs:
+            log.debug("acquired by %s", job_id)
+            acquired = True
         else:
-            log.debug("released")
-            self.blocks.remove(name)
+            log.debug("postpone %s (blocked by %s)", job_id, jobs[0])
+            acquired = False
+
+        self.blocks.setdefault(name, []).append(job_id)
+        return acquired
+
+    def unblock(self, name, job_id):
+        log = logging.getLogger("@" + name)
+
+        log.debug("released by %s", job_id)
+        jobs = self.blocks.get(name, [])
+        assert jobs and jobs.pop(0) == job_id
+
+        if jobs:
+            log.debug("resume %s", jobs[0])
+            return jobs[0]
 

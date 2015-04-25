@@ -166,7 +166,6 @@ class Scheduler(object):
     def remove_job(self, job_id):
         self.jobs.pop(job_id)
         self.bus.post("quit", job=job_id)
-        self.bus.unregister(job_id)
 
     def update_jobs(self, environment, crontab):
         # Evaluate individual job definitions.

@@ -207,7 +207,7 @@ class Job(object):
                     self.start()
                 else:
                     self.state = SLEEPING
-                    self.bus.post("unblock", block=self.block)
+                    self.bus.post("unblock", block=self.block, job=self.id)
 
     #
     # === Scheduling / Execution
@@ -272,7 +272,7 @@ class Job(object):
             self.finalize()
             self.runner = None
             self.state = SLEEPING
-            self.bus.post("unblock", block=self.block)
+            self.bus.post("unblock", block=self.block, job=self.id)
             self.bus.post("stop", job=self.id)
 
     def terminate(self):

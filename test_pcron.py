@@ -8,6 +8,7 @@ import unittest
 
 from libpcron.time import TimeSpec, TimeSpecError, IntervalSpec, \
         IntervalSpecError, format_time
+from libpcron.event import Bus, BlockManager
 
 
 dt = datetime.datetime
@@ -163,6 +164,58 @@ class FormatTest(unittest.TestCase):
         self.assertEqual(format_time(td(weeks=1)), "7d")
         self.assertEqual(format_time(td(weeks=1, seconds=1)), "7d1s")
         self.assertEqual(format_time(td(weeks=1, days=2, hours=3, minutes=4, seconds=5)), "9d3h4m5s")
+
+
+class BusTest(unittest.TestCase):
+
+    def _task(self):
+        events = ["a", "b", "c", "stop"]
+        while events:
+            event = yield
+            self.assertEqual(event.name, events.pop(0))
+
+    def test_bus(self):
+        bus = Bus()
+
+        task = self._task()
+        next(task)
+
+        events = ["a", "b", "c", "stop"]
+
+        bus.register("foo", task)
+        for name in events:
+            bus.post(name)
+
+        while events:
+            event = bus.get_event()
+            self.assertEqual(event.name, events.pop(0))
+            bus.process_event(event)
+
+
+class BlockTest(unittest.TestCase):
+
+    def test_block1(self):
+        manager = BlockManager()
+
+        self.assertRaises(AssertionError, manager.unblock, "block", "foo")
+
+        self.assertTrue(manager.block("block", "foo"))
+        self.assertRaises(AssertionError, manager.block, "block", "foo")
+
+        self.assertFalse(manager.block("block", "bar"))
+        self.assertRaises(AssertionError, manager.block, "block", "bar")
+
+        self.assertEqual(manager.unblock("block", "foo"), "bar")
+        self.assertRaises(AssertionError, manager.unblock, "block", "foo")
+
+    def test_block2(self):
+        manager = BlockManager()
+
+        self.assertTrue(manager.block("block", "foo"))
+        self.assertFalse(manager.block("block", "bar"))
+        self.assertEqual(manager.unblock("block", "foo"), "bar")
+        self.assertTrue(manager.unblock("block", "bar") is None)
+        self.assertRaises(AssertionError, manager.unblock, "block", "bar")
 
 
 if __name__ == "__main__":
