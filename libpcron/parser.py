@@ -50,7 +50,7 @@ def extract_loglevel_from_crontab(path):
             raise CrontabError("invalid conflict value:%r" % value)
 
 
-class CrontabParser(object):
+class CrontabParser:
 
     def __init__(self, path):
         self.path = path

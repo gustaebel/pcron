@@ -20,7 +20,9 @@
 #
 # -----------------------------------------------------------------------
 
+import os
 import io
+import pwd
 import datetime
 import subprocess
 import logging
@@ -83,7 +85,7 @@ of the job is already waiting to start.
 """
 
 
-class Job(object):
+class Job:
 
     last_run = datetime.datetime.min
     scheduled_run = datetime.datetime.min
@@ -98,15 +100,28 @@ class Job(object):
     #
     # === Base methods
     #
-    def __init__(self, bus, username, environ, environment):
+    def __init__(self, bus, init_code):
         self.bus = bus
-        self.username = username
-        self.environ = environ
-        self.environment = environment
+        self.init_code = init_code
 
         self.runner = None
         self.task = None
         self.state = SLEEPING
+
+        self.record = pwd.getpwuid(os.getuid())
+        self.username = self.record.pw_name
+
+        # Prepare a basic environment for the job.
+        self.environ = {
+            "USER":     self.record.pw_name,
+            "LOGNAME":  self.record.pw_name,
+            "UID":      str(self.record.pw_uid),
+            "GID":      str(self.record.pw_gid),
+            "HOME":     self.record.pw_dir,
+            "SHELL":    self.record.pw_shell,
+            "PATH":     "/usr/local/bin:/usr/bin:/bin" if self.record.pw_uid > 0 else \
+                        "/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin"
+        }
 
     def __str__(self):
         return self.id
@@ -204,7 +219,12 @@ class Job(object):
 
                 if run:
                     self.bus.post("started", job=self.id)
-                    self.start()
+                    try:
+                        self.start()
+                    except RunnerError as exc:
+                        self.log.error(str(exc))
+                        self.state = SLEEPING
+                        self.bus.post("unblock", block=self.block, job=self.id)
                 else:
                     self.state = SLEEPING
                     self.bus.post("unblock", block=self.block, job=self.id)
@@ -258,12 +278,8 @@ class Job(object):
         self.state = RUNNING
 
         # Start the process.
-        self.runner = Runner(self.command, self.environ, self.environment)
-        try:
-            self.runner.start()
-        except RunnerError as exc:
-            self.log.error("an error occurred running the command:")
-            self.log.error(str(exc))
+        self.runner = Runner(self.command, self.environ, self.init_code)
+        self.runner.start()
 
     def poll(self):
         """Check if the job command is still running.
@@ -357,7 +373,7 @@ class Job(object):
             self.log.error(str(exc))
 
     def test_condition(self):
-        runner = Runner(self.condition, self.environ, self.environment)
+        runner = Runner(self.condition, self.environ, self.init_code)
         try:
             try:
                 runner.start()

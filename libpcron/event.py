@@ -23,7 +23,7 @@
 import logging
 
 
-class Event(object):
+class Event:
 
     def __init__(self, name, **kwargs):
         self.name = name
@@ -31,7 +31,7 @@ class Event(object):
             setattr(self, key, value)
 
 
-class Bus(object):
+class Bus:
 
     def __init__(self):
         self.queue = []
@@ -67,7 +67,7 @@ class Bus(object):
                 self.post("start", job=job_id)
 
 
-class BlockManager(object):
+class BlockManager:
     """BlockManager keeps track of currently active blocks and those jobs
        waiting for them to be released.
     """

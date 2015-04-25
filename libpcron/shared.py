@@ -56,7 +56,7 @@ def sleep(seconds=None):
             raise Interrupt
 
 
-class AtomicFile(object):
+class AtomicFile:
 
     def __init__(self, path):
         self.path = path
@@ -79,7 +79,7 @@ class AtomicFile(object):
             self.close()
 
 
-class DaemonContext(object):
+class DaemonContext:
 
     def __init__(self, path, daemonize=True):
         self.path = path

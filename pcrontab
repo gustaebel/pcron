@@ -34,7 +34,7 @@ import signal
 from libpcron import __version__, __copyright__, ENVIRONMENT_NAME, CRONTAB_NAME
 from libpcron.parser import CrontabParser, CrontabError, CrontabEmptyError
 from libpcron.scheduler import Scheduler
-from libpcron.run import SH_CODE
+from libpcron.run import SHELL_CODE
 
 
 def digest(path):
@@ -135,7 +135,7 @@ def execute(directory, name):
         environment = fobj.read()
 
     with tempfile.NamedTemporaryFile(prefix="tmp.pcron-cmd.", mode="w", delete=False) as script:
-        script.write(SH_CODE % (environment, job["command"]))
+        script.write(SHELL_CODE % (environment, job["command"]))
 
     try:
         proc = subprocess.Popen([environ["SHELL"], script.name], env=environ)

@@ -21,7 +21,6 @@
 # -----------------------------------------------------------------------
 
 import os
-import pwd
 import time
 import signal
 import logging
@@ -37,7 +36,7 @@ from .event import Bus
 from .job import Job
 
 
-class Scheduler(object):
+class Scheduler:
 
     def __init__(self, opts):
         self.opts = opts
@@ -45,42 +44,18 @@ class Scheduler(object):
         self.directory = self.opts.directory
 
         self.crontab_path = os.path.join(self.directory, CRONTAB_NAME)
-        self.state_path = os.path.join(self.directory, "state.db")
         self.environ_path = os.path.join(self.directory, ENVIRONMENT_NAME)
+        self.state_path = os.path.join(self.directory, "state.db")
 
         self.bus = Bus()
         self.jobs = {}
         self.running = True
-
-        self.record, self.environ = self.create_environ(self.directory)
 
         self.init_logging()
         self.init_signal_handlers()
 
         self.load()
         self.load_state()
-
-    @staticmethod
-    def create_environ(directory):
-        record = pwd.getpwuid(os.getuid())
-
-        # Prepare the basic environment and default variables
-        # for the jobs.
-        environ = {
-            "USER":     record.pw_name,
-            "LOGNAME":  record.pw_name,
-            "UID":      str(record.pw_uid),
-            "GID":      str(record.pw_gid),
-            "HOME":     record.pw_dir,
-            "SHELL":    record.pw_shell,
-            "PCRONDIR": directory
-        }
-        if record.pw_name == "root":
-            environ["PATH"] = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-        else:
-            environ["PATH"] = "/usr/local/bin:/usr/bin:/bin"
-
-        return record, environ
 
     def init_logging(self):
         logging.basicConfig(
@@ -127,12 +102,9 @@ class Scheduler(object):
     # === Crontab
     #
     def load(self):
-        # FIXME isolate environment better from environ attr name-wise
-        environment = self.load_environment()
-        crontab = self.load_crontab()
-        self.update_jobs(environment, crontab)
+        self.update_jobs(self.load_init_code(), self.load_crontab())
 
-    def load_environment(self):
+    def load_init_code(self):
         try:
             with open(os.path.join(self.directory, ENVIRONMENT_NAME)) as fileobj:
                 return fileobj.read()
@@ -156,8 +128,8 @@ class Scheduler(object):
     #
     # === Jobs
     #
-    def add_job(self, job_id, info, environment):
-        job = Job(self.bus, self.record.pw_name, self.environ.copy(), environment)
+    def add_job(self, job_id, info, init_code):
+        job = Job(self.bus, init_code)
         job.update(info)
         self.jobs[job_id] = job
         task = job.setup()
@@ -167,7 +139,7 @@ class Scheduler(object):
         self.jobs.pop(job_id)
         self.bus.post("quit", job=job_id)
 
-    def update_jobs(self, environment, crontab):
+    def update_jobs(self, init_code, crontab):
         # Evaluate individual job definitions.
         for job_id, info in crontab.items():
             job = self.jobs.get(job_id)
@@ -175,7 +147,7 @@ class Scheduler(object):
             if job is None:
                 # Create a new job.
                 self.log.info("create job %s", job_id)
-                self.add_job(job_id, info, environment)
+                self.add_job(job_id, info, init_code)
             else:
                 # Update an existing job.
                 self.log.debug("update job %s", job_id)

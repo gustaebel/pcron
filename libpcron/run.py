@@ -31,15 +31,24 @@ class RunnerError(Exception):
     pass
 
 SUPPORTED_SHELLS = set(["sh", "bash", "ksh", "zsh", "dash"])
-SH_CODE = "set -ea; %s set +e; %s"
+
+# Prepare shell script code with allexport and errexit properties set during
+# the execution of init_code. We need a bourne-compatible shell for that.
+SHELL_CODE = """
+set -ea
+%s
+set +ea
+%s
+"""
 
 
-class Runner(object):
+class Runner:
 
     def __init__(self, command, environ, init_code):
         self.command = command
         self.environ = environ
         self.init_code = init_code
+
         self.shell = environ["SHELL"]
         self.process = None
         self.output = None
@@ -53,7 +62,7 @@ class Runner(object):
         self.script_name = self.script.name
 
         # Write the initialization code and the command to the script file.
-        code = SH_CODE % (self.init_code, self.command)
+        code = SHELL_CODE % (self.init_code, self.command)
         self.script.write(code)
         self.script.close()
 
@@ -62,7 +71,7 @@ class Runner(object):
         self.start_time = datetime.datetime.now()
         self.stop_time = None
         self.finished = False
-        self.size = None
+        self.output_size = None
 
         # The user's shell must be bourne shell compatible.
         if os.path.basename(self.shell) not in SUPPORTED_SHELLS:
@@ -108,8 +117,8 @@ class Runner(object):
             # Save the time when the process ended.
             self.stop_time = datetime.datetime.now()
 
-            # Save the size of the output in the logfile.
-            self.size = os.path.getsize(self.output_name)
+            # Save the size of the command output.
+            self.output_size = os.path.getsize(self.output_name)
 
             # Reopen the logfile for reading.
             self.output = open(self.output_name, "rb")
@@ -127,7 +136,7 @@ class Runner(object):
             return datetime.datetime.now() - self.start_time
 
     def get_output_size(self):
-        return self.size
+        return self.output_size
 
     def get_output(self):
         return self.output

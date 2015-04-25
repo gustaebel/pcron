@@ -33,7 +33,7 @@ class IntervalSpecError(ParserError):
     pass
 
 
-class TimeSpec(object):
+class TimeSpec:
 
     r_asterisk = re.compile(r"(?P<asterisk>\*)(?:/(?P<step>\d+))?$")
     r_single = re.compile(r"(?P<first>[a-zA-Z0-9]+)$")
@@ -174,7 +174,7 @@ class TimeSpec(object):
         return self.value
 
 
-class IntervalSpec(object):
+class IntervalSpec:
 
     # XXX be more permissive?
     r_interval = re.compile(r"(?:(?P<month>\d+)m)?(?:(?P<week>\d+)w)?(?:(?P<day>\d+)d)?(?:(?P<hour>\d+)h)?(?:(?P<minute>\d+))?$", re.IGNORECASE)
