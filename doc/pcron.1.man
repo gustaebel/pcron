@@ -1,0 +1,95 @@
+NAME
+  pcrond - periodically execute shell commands
+
+SYNOPSIS
+  pcron [-f/--foreground] [-d/--directory NAME]
+
+DESCRIPTION
+  pcron(1) is a daemon that executes shell commands according to a time
+  schedule.  For more information about the differences between pcron(1) and
+  other cron daemons, see SUMMARY.
+
+  pcron(1) is usually not explicitly started by the user. Instead, for each
+  user on the system an individual instance is forked by the system-wide
+  pcrond(1) daemon.
+
+  If however pcron(1) is started independently, it instantly goes to the
+  background unless the --foreground option is specified. On startup, pcron(1)
+  loads the pcrontab(5) file that is usually located in `~/.pcron/crontab.ini'.
+  This file must not be edited by hand but must be maintained using the
+  pcrontab(1) command. Otherwise pcron(1) will not be notified when it changes.
+
+  The pcrontab(5) file contains instructions that tell pcron(1) which shell
+  commands (or "jobs") the user wants to execute at which time of day or interval
+  and under which conditions.
+
+SUMMARY
+  pcron(1) is a comprehensive cron daemon replacement inspired by Vixie cron
+  and fcron.
+
+  - pcron(1) does not use traditional crontab files. Instead, it uses the INI
+    file format with sections of key value pairs.
+
+  - pcron(1) provides three different scheduling methods:
+
+      - Run jobs by a fixed time schedule that is configured using the
+        traditional cron format.
+      - Run jobs in regular intervals.
+      - Run jobs as follow-ups to other jobs.
+
+    The different methods can be mixed. Conditions are an additional tool
+    to control the execution of jobs.
+
+  - pcron(1) makes sure that two instances of the same job will never run
+    at the same time. Instead, to resolve possible conflicts, jobs will either
+    be discarded or killed.
+
+  - pcron(1) allows queueing of jobs using groups. Jobs that belong to the same
+    group are scheduled to run one after the other. This is useful to reduce
+    system and network load.
+
+  - pcron(1) offers logging capabilities and a configurable email interface,
+    that informs the user about successful and failed jobs and scheduling
+    conflicts.
+
+  - pcron(1) saves its internal state between sessions and system reboots.
+
+  - pcron(1) makes it easy to organize the commands by supplementing
+    `crontab.ini` with the contents of a shell script called `environment.sh`.
+    This file can be used for setup code, e.g. to define shell variables and
+    functions that are shared among different jobs.
+
+
+
+OPTIONS
+  --version             show program's version number and exit
+  -h, --help            show this help message and exit
+  -f, --foreground      do not fork to the background and write log messages
+                        to stderr
+  -d NAME, --directory=NAME  
+                        the name of the configuration directory, default is
+                        ~/.pcron
+
+
+LOGGING
+pcron(1) writes all log messages to `~/.pcron/logfile.txt'. The level of
+verbosity can be configured in the `~/.pcron/crontab.ini' file.
+
+pcron(1) will dump its internal scheduling state to the logfile on the next
+full minute if it receives a SIGUSR1 signal, provided the `loglevel' is set to
+either `info' or `debug'.
+
+
+FILES
+  ~/.pcron/crontab.ini  
+  ~/.pcron/environment.sh  
+  ~/.pcron/logfile.txt  
+
+
+SEE ALSO
+  pcrond(1), pcrontab(1), pcrontab(5)
+
+
+AUTHOR
+  Lars Gustaebel <lars@gustaebel.de>
+

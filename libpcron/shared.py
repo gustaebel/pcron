@@ -1,4 +1,3 @@
-# coding: utf8
 # -----------------------------------------------------------------------
 #
 # pcron - a periodic cron-like job scheduler.
@@ -22,16 +21,17 @@
 
 import sys
 import os
-import time
 import tempfile
-import signal
+import traceback
 
-STATE_NAMES = ["SLEEPING", "WAITING", "RUNNING"]
-SLEEPING, WAITING, RUNNING = range(len(STATE_NAMES))
+
+EXC_PREFIX = ">>> "
 
 
 class Interrupt(Exception):
-    pass
+
+    def __init__(self, signum):
+        self.signum = signum
 
 class ParserError(Exception):
     pass
@@ -41,20 +41,6 @@ class CrontabError(ParserError):
 
 class CrontabEmptyError(CrontabError):
     pass
-
-
-def sleep(seconds=None):
-    """Go to sleep (for a certain amount of seconds). If sleeping is
-       interrupted by a signal an Interrupt exception is raised.
-    """
-    if seconds is None:
-        # Sleep until a signal occurs.
-        signal.pause()
-    else:
-        stop_time = time.time() + seconds
-        time.sleep(seconds)
-        if time.time() < stop_time:
-            raise Interrupt
 
 
 class AtomicFile:
@@ -81,6 +67,7 @@ class AtomicFile:
 
 
 class DaemonContext:
+    # pylint:disable=too-few-public-methods
 
     def __init__(self, path, daemonize=True):
         self.path = path
@@ -99,7 +86,8 @@ class DaemonContext:
             except OSError:
                 pass
             else:
-                raise SystemExit("%s seems to be running on pid %s" % (os.path.basename(sys.argv[0]), pid))
+                raise SystemExit("%s seems to be running on pid %s" % \
+                        (os.path.basename(sys.argv[0]), pid))
 
         if self.daemonize:
             try:
@@ -132,4 +120,72 @@ class DaemonContext:
         except OSError:
             pass
         return False
+
+
+class SubLogger:
+
+    def __init__(self, logger, name):
+        self.logger = logger
+        self.name = name
+
+    def exception(self, message, *args):
+        self.logger.log(self.name, self.logger.ERROR, message, *args)
+        for line in traceback.format_exc().splitlines():
+            self.logger.log(self.name, self.logger.ERROR, EXC_PREFIX + line)
+
+    def error(self, message, *args):
+        self.logger.log(self.name, self.logger.ERROR, message, *args)
+
+    def warn(self, message, *args):
+        self.logger.log(self.name, self.logger.WARN, message, *args)
+
+    def info(self, message, *args):
+        self.logger.log(self.name, self.logger.INFO, message, *args)
+
+    def debug(self, message, *args):
+        self.logger.log(self.name, self.logger.DEBUG, message, *args)
+
+
+class NullLogger:
+
+
+    ERROR, WARN, INFO, DEBUG = range(4)
+
+    levels = {
+        "quiet": WARN,
+        "info": INFO,
+        "debug": DEBUG
+    }
+
+    level_names = {
+        ERROR:  "ERROR",
+        WARN:   "WARNING",
+        INFO:   "INFO",
+        DEBUG:  "DEBUG"
+    }
+
+    def new(self, name):
+        return SubLogger(self, name)
+
+    def log(self, name, level, message, *args):
+        pass
+
+
+class Logger(NullLogger):
+
+    def __init__(self, time_provider, file, level):
+        super().__init__()
+        self.time_provider = time_provider
+        self.file = file
+        self.level = level
+
+    def log(self, name, level, message, *args):
+        if level <= self.level:
+            record = (
+                self.time_provider.now().strftime("%Y-%m-%d %H:%M:%S"),
+                self.level_names[level],
+                name,
+                message % args if args else message
+            )
+            print("%s  %-7s  %-12s  %s" % record, file=self.file, flush=True)
 

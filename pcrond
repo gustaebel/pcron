@@ -1,5 +1,4 @@
 #!/usr/bin/python3
-# coding: utf8
 # -----------------------------------------------------------------------
 #
 # pcron - a periodic cron-like job scheduler.
@@ -21,83 +20,117 @@
 #
 # -----------------------------------------------------------------------
 
-import sys
 import os
 import time
 import pwd
 import grp
-import logging
-import optparse
+import argparse
 import subprocess
 import signal
 
-from libpcron import __version__, __copyright__, CRONTAB_NAME
+from libpcron import __version__, __copyright__, CRONTAB_NAME, PID_NAME
 from libpcron.shared import DaemonContext
-from libpcron.scheduler import Scheduler
 
 
-if __name__ == "__main__":
-    parser = optparse.OptionParser(version="%%prog %s - %s" % (__version__, __copyright__))
-    parser.add_option("-g", "--groups", metavar="GROUPS",
-            help="restrict pcrond to users that belong to one of GROUPS which is a comma-separated list of group names")
-    parser.add_option("-i", "--check-interval", type="int", metavar="N", default=15,
-            help="check for users' crontabs every N minutes, default is %default")
-    parser.add_option("-p", "--pid-path", metavar="NAME", default="/var/run/pcrond.pid",
-            help="the path of the pid file, default is %default")
-    parser.add_option("--pcron-path", metavar="NAME", default="/usr/bin/pcron",
-            help="the path to the pcron executable, default is %default")
-    opts, args = parser.parse_args()
+def signal_handler(signum, frame):
+    # pylint:disable=unused-argument
+    raise SystemExit(1)
 
-    if opts.groups is not None:
-        users = {}
-        for group in opts.groups.split(","):
+
+class Controller:
+
+    # TODO Restart failed pcron instances.
+
+    def __init__(self, groups, pcron_path, check_interval):
+        self.groups = groups
+        self.pcron_path = pcron_path
+        self.check_interval = check_interval
+
+        self.running = set()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        for user, record in self.get_users():
+            if user not in self.running:
+                continue
+
+            path = os.path.join(record.pw_dir, ".pcron", PID_NAME)
+
+            try:
+                with open(path, "r") as fileobj:
+                    pid = int(fileobj.read().strip())
+            except (OSError, ValueError):
+                pass
+            else:
+                os.kill(pid, signal.SIGTERM)
+
+    def get_all_users(self):
+        # pylint:disable=no-self-use
+        for record in pwd.getpwall():
+            yield record.pw_name, record
+
+    def get_group_users(self):
+        users = set()
+        for group in self.groups.split(","):
             try:
                 record = grp.getgrnam(group.strip())
             except KeyError:
-                raise SystemExit("group %s does not exist" % group)
+                continue
 
             for user in record.gr_mem:
                 if user not in users:
                     try:
-                        users[user] = pwd.getpwnam(user)
+                        yield user, pwd.getpwnam(user)
                     except KeyError:
-                        raise SystemExit("user %s does not exist" % user)
+                        continue
+                    users.add(user)
 
-    else:
-        users = dict((record.pw_name, record) for record in pwd.getpwall())
+    def get_users(self):
+        if self.groups is None:
+            yield from self.get_all_users()
+        else:
+            yield from self.get_group_users()
 
-    with DaemonContext(opts.pid_path):
-        def signal_handler(signum, frame):
-            raise SystemExit(1)
+    def mainloop(self):
+        while True:
+            for user, record in self.get_users():
+                if user in self.running:
+                    continue
 
+                path = os.path.join(record.pw_dir, ".pcron", CRONTAB_NAME)
+                if os.path.exists(path):
+                    subprocess.call(
+                        ["/bin/su", "--login", user, "--command", self.pcron_path],
+                        stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
+                    self.running.add(user)
+
+            time.sleep(self.check_interval * 60)
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--version", action="version",
+                        version="%%(prog)s %s - %s" % (__version__, __copyright__))
+    parser.add_argument("-g", "--groups", metavar="GROUPS",
+                        help="restrict pcrond to users that belong to one of GROUPS which is a "\
+                             "comma-separated list of group names")
+    parser.add_argument("-i", "--check-interval", type=int, metavar="N", default=15,
+                        help="check for users' crontabs every N minutes, default is %(default)s")
+    parser.add_argument("-p", "--pid-path", metavar="NAME", default="/var/run/pcrond.pid",
+                        help="the path of the pid file, default is %(default)s")
+    parser.add_argument("--pcron-path", metavar="NAME", default="/usr/bin/pcron",
+                        help="the path to the pcron executable, default is %(default)s")
+    args = parser.parse_args()
+
+    with DaemonContext(args.pid_path):
         signal.signal(signal.SIGINT, signal_handler)
         signal.signal(signal.SIGTERM, signal_handler)
 
-        running = set()
-        try:
-            while True:
-                for user, record in sorted(users.items()):
-                    if user in running:
-                        continue
+        with Controller(args.groups, args.pcron_path, args.check_interval) as controller:
+            controller.mainloop()
 
-                    path = os.path.join(record.pw_dir, ".pcron", CRONTAB_NAME)
-                    if os.path.exists(path):
-                        subprocess.call(["/bin/su", "--login", user, "--command", opts.pcron_path],
-                                stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
-                        running.add(user)
 
-                time.sleep(opts.check_interval * 60)
-
-        finally:
-            for user in running:
-                record = users[user]
-                path = os.path.join(record.pw_dir, ".pcron", "pcron.pid")
-
-                try:
-                    with open(path, "r") as fileobj:
-                        pid = int(fileobj.read().strip())
-                except (OSError, ValueError):
-                    pass
-                else:
-                    os.kill(pid, signal.SIGTERM)
-
+if __name__ == "__main__":
+    main()

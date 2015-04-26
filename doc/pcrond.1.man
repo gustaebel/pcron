@@ -1,9 +1,9 @@
 NAME
-  pcrond - execute shell commands on a regular basis.
+  pcrond - periodically execute shell commands
 
 
 SYNOPSIS
-  pcrond [--groups GROUP1,GROUP2,...]
+  pcrond [-g/--groups GROUP1,GROUP2,...] [-i/--interval N] [-p/--pid-path PATH] [--pcron-path PATH]
 
 
 DESCRIPTION

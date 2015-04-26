@@ -1,5 +1,4 @@
 #!/usr/bin/python3
-# coding: utf8
 # -----------------------------------------------------------------------
 #
 # pcron - a periodic cron-like job scheduler.
@@ -21,26 +20,33 @@
 #
 # -----------------------------------------------------------------------
 
+import sys
 import os
-import logging
-import optparse
+import argparse
 
-from libpcron import __version__, __copyright__
+from libpcron import __version__, __copyright__, PID_NAME
 from libpcron.shared import DaemonContext
+from libpcron.time import TimeProvider
 from libpcron.scheduler import Scheduler
 
 
-if __name__ == "__main__":
-    parser = optparse.OptionParser(version="%%prog %s - %s" % (__version__, __copyright__))
-    parser.add_option("-f", "--foreground", action="store_false", dest="daemon", default=True,
-            help="do not fork to the background and write log messages to stderr")
-    parser.add_option("-d", "--directory", metavar="NAME", default="~/.pcron",
-            help="the name of the configuration directory, default is %default")
-    opts, args = parser.parse_args()
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--version", action="version",
+                        version="%%(prog)s %s - %s" % (__version__, __copyright__))
+    parser.add_argument("-f", "--foreground", action="store_false", dest="daemon", default=True,
+                        help="do not fork to the background and write log messages to stderr")
+    parser.add_argument("-d", "--directory", metavar="NAME", default="~/.pcron",
+                        help="the name of the configuration directory, default is %(default)s")
+    args = parser.parse_args()
 
-    opts.directory = os.path.expanduser(opts.directory)
+    args.directory = os.path.abspath(os.path.expanduser(args.directory))
 
-    with DaemonContext(os.path.join(opts.directory, "pcron.pid"), daemonize=opts.daemon):
-        with Scheduler(opts) as scheduler:
+    with DaemonContext(os.path.join(args.directory, PID_NAME), daemonize=args.daemon):
+        with Scheduler(TimeProvider(),
+                       args.directory,
+                       logfile=sys.stderr if not args.daemon else None) as scheduler:
             scheduler.mainloop()
 
+if __name__ == "__main__":
+    main()

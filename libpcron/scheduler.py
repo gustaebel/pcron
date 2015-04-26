@@ -1,4 +1,3 @@
-# coding: utf8
 # -----------------------------------------------------------------------
 #
 # pcron - a periodic cron-like job scheduler.
@@ -21,50 +20,59 @@
 # -----------------------------------------------------------------------
 
 import os
-import time
 import signal
 import logging
 import pickle
-import datetime
+import itertools
+import collections
 
 from . import ENVIRONMENT_NAME, CRONTAB_NAME
-from .shared import AtomicFile, Interrupt, sleep
-from .shared import RUNNING, WAITING, SLEEPING
+from .shared import AtomicFile, Interrupt, Logger
 from .time import format_time
 from .parser import CrontabParser, CrontabError, extract_loglevel_from_crontab
-from .event import Bus
-from .job import Jobs, Job
+from .job import Job
+from .mail import Mailer
 
 
 class Scheduler:
 
-    def __init__(self, opts):
-        self.opts = opts
+    Job = Job
+    Mailer = Mailer
 
-        self.directory = self.opts.directory
+    STATE_TAG = 1
+
+    def __init__(self, time_provider, directory, logfile=None, persistent_state=True):
+        assert os.path.isabs(directory)
+
+        self.time_provider = time_provider
+        self.directory = directory
+        self.logfile = logfile
+        self.persistent_state = persistent_state
 
         self.crontab_path = os.path.join(self.directory, CRONTAB_NAME)
         self.environ_path = os.path.join(self.directory, ENVIRONMENT_NAME)
         self.state_path = os.path.join(self.directory, "state.db")
 
-        self.bus = Bus()
-        self.jobs = Jobs()
-        self.running = True
+        if self.logfile is None:
+            self.logfile = open(os.path.join(self.directory, "logfile.txt"), "w")
 
-        self.init_logging()
-        self.init_signal_handlers()
+        self.logger = Logger(self.time_provider, self.logfile,
+                             extract_loglevel_from_crontab(self.crontab_path))
+
+        self.mailer = self.Mailer(self.logger)
+
+        self.log = self.logger.new("main")
+        self.log.info("started with pid %d", os.getpid())
+
+        self.running = {}
+        self.queues = {}
+        self.serial = collections.Counter()
+
+        self.signals = []
+        self.init_signal_handler()
 
         self.load()
         self.load_state()
-
-    def init_logging(self):
-        logging.basicConfig(
-                level=extract_loglevel_from_crontab(self.crontab_path),
-                format="%(asctime)s  %(levelname)-7s  %(name)-10s  %(message)s",
-                filename=os.path.join(self.directory, "logfile.txt") if self.opts.daemon else None)
-
-        self.log = logging.getLogger("main")
-        self.log.info("started with pid %d", os.getpid())
 
     def __enter__(self):
         return self
@@ -75,213 +83,272 @@ class Scheduler:
         logging.shutdown()
 
     #
-    # === State
-    #
-    def load_state(self):
-        try:
-            with open(self.state_path, "rb") as fileobj:
-                for job_id, next_run in pickle.load(fileobj).items():
-                    try:
-                        self.jobs[job_id].next_run = next_run
-                    except KeyError:
-                        continue
-        except OSError as exc:
-            self.log.warn(str(exc))
-
-    def save_state(self):
-        try:
-            state = {}
-            for job in self.jobs:
-                state[job.id] = job.next_run
-            with AtomicFile(self.state_path) as fileobj:
-                pickle.dump(state, fileobj)
-        except OSError as exc:
-            self.log.warn(str(exc))
-
-    #
     # === Crontab
     #
     def load(self):
-        self.update_jobs(self.load_init_code(), self.load_crontab())
+        self.init_code = self.load_init_code()
+        self.startup, self.crontab = self.load_crontab()
+
+        for job in itertools.chain(self.startup.values(), self.crontab.values()):
+            job.init(self.time_provider, self.logger, self.directory, self.init_code)
+
+    def _load_init_code(self):
+        with open(os.path.join(self.directory, ENVIRONMENT_NAME)) as fileobj:
+            return fileobj.read()
 
     def load_init_code(self):
         try:
-            with open(os.path.join(self.directory, ENVIRONMENT_NAME)) as fileobj:
-                return fileobj.read()
+            return self._load_init_code()
         except FileNotFoundError:
             self.log.debug("%s/%s not found", self.directory, ENVIRONMENT_NAME)
         except OSError as exc:
             self.log.error(str(exc))
         return ""
 
+    def _load_crontab(self):
+        parser = CrontabParser(self.crontab_path, self.Job)
+        return parser.parse()
+
     def load_crontab(self):
         try:
-            parser = CrontabParser(self.crontab_path)
-            return parser.parse()
+            return self._load_crontab()
         except OSError as exc:
             self.log.error("%s: %s", self.directory, exc)
         except CrontabError as exc:
             self.log.error("%s: %s", self.directory, exc)
             self.log.error("%s: cannot use crontab because it contains errors", self.directory)
-        return {}
+        return {}, {}
 
     #
-    # === Jobs
+    # === State
     #
-    def add_job(self, job_id, info, init_code):
-        job = Job(self.bus, init_code)
-        job.update(info)
-        self.jobs[job_id] = job
-        task = job.setup()
-        self.bus.register(job_id, task)
+    def load_state(self):
+        if self.persistent_state:
+            self.log.debug("load state from %r", self.state_path)
+            try:
+                with open(self.state_path, "rb") as fileobj:
+                    state = pickle.load(fileobj)
 
-    def remove_job(self, job_id):
-        self.jobs.remove(job_id)
-        self.bus.post("quit", job=job_id)
+                    if state.get("tag") == self.STATE_TAG:
+                        for name, next_run in state["jobs"].items():
+                            try:
+                                self.crontab[name].next_run = next_run
+                            except KeyError:
+                                continue
+                    else:
+                        self.log.warn("ignore obsolete state")
 
-    def update_jobs(self, init_code, crontab):
-        # Evaluate individual job definitions.
-        for job_id, info in crontab.items():
-            if job_id not in self.jobs:
-                # Create a new job.
-                self.log.info("create job %s", job_id)
-                self.add_job(job_id, info, init_code)
-            else:
-                # Update an existing job.
-                self.log.debug("update job %s", job_id)
-                self.jobs[job_id].update(info)
+            except OSError as exc:
+                self.log.warn(str(exc))
 
-        # Remove old jobs.
-        for job in list(self.jobs):
-            if job.id not in crontab:
-                self.log.info("remove job %s", job.id)
-                self.remove_job(job.id)
+    def save_state(self):
+        if self.persistent_state:
+            state = {"tag": self.STATE_TAG, "jobs": {}}
+            for job in self.crontab.values():
+                state["jobs"][job.name] = job.next_run
+
+            self.log.debug("save state to %r", self.state_path)
+            try:
+                with AtomicFile(self.state_path) as fileobj:
+                    pickle.dump(state, fileobj)
+            except OSError as exc:
+                self.log.warn(str(exc))
 
     #
     # === Signals
     #
-    def init_signal_handlers(self):
-        signal.signal(signal.SIGINT, self._signal_shutdown)
-        signal.signal(signal.SIGTERM, self._signal_shutdown)
-        signal.signal(signal.SIGHUP, self._signal_reload)
-        signal.signal(signal.SIGUSR1, self._signal_dump)
+    def init_signal_handler(self):
+        signal.signal(signal.SIGINT, self._signal_handler)
+        signal.signal(signal.SIGTERM, self._signal_handler)
+        signal.signal(signal.SIGHUP, self._signal_handler)
+        signal.signal(signal.SIGUSR1, self._signal_handler)
         signal.signal(signal.SIGUSR2, signal.SIG_IGN)
-        signal.signal(signal.SIGCHLD, self._signal_child)
+        signal.signal(signal.SIGCHLD, self._signal_handler)
 
-    def _signal_shutdown(self, signum, frame):
+    def _signal_handler(self, signum, frame):
         # pylint:disable=unused-argument
-        if signum == signal.SIGINT:
-            self.log.warn("keyboard interrupt")
-        elif signum == signal.SIGTERM:
-            self.log.warn("termination signal")
-
-        self.bus.post("shutdown")
-
-    def _signal_dump(self, signum, frame):
-        # pylint:disable=unused-argument
-        self.log.debug("received SIGUSR1 signal, dumping state")
-        self.bus.post("dump")
-
-    def _signal_reload(self, signum, frame):
-        # pylint:disable=unused-argument
-        self.log.debug("received SIGHUP signal, reloading crontab")
-        self.bus.post("reload")
-
-    def _signal_child(self, signum, frame):
-        # pylint:disable=unused-argument
-        self.log.debug("received SIGCHLD signal")
-        self.bus.post("child")
+        # Feed the received signal into our event bus.
+        self.signals.append(signum)
 
     def dump(self):
-        for job in self.jobs.sorted(lambda j: j.last_run):
-            if job.state == RUNNING:
-                self.log.info("[running]   %s  %s", format_time(job.last_run), job.id)
+        jobs = set()
 
-        for job in self.jobs.sorted(lambda j: j.scheduled_run):
-            if job.state == WAITING:
-                self.log.info("[waiting]   %s  %s", format_time(job.scheduled_run), job.id)
+        for job in sorted(self.running.values(), key=lambda j: j.this_run):
+            self.log.info("[running]   %s  %s", format_time(job.this_run), job.name)
+            jobs.add(job.name)
 
-        for job in self.jobs.sorted(lambda j: j.next_run):
-            if job.state == SLEEPING:
-                self.log.info("[sleeping]  %s  %s", format_time(job.next_run), job.id)
+        for queue in sorted((q for q in self.queues.values() if q), key=lambda q: q[0].this_run):
+            job = queue[0]
+            self.log.info("[waiting]   %s  %s", format_time(job.this), job.name)
+            jobs.add(job.name)
 
-        for job in self.jobs.inactive():
-            self.log.info("[inactive]  %s  %s", format_time(datetime.datetime.max), job.id)
+        for job in sorted(self.crontab.values(), key=lambda j: j.next_run):
+            if not job.active or job.name in jobs:
+                continue
+            self.log.info("[sleeping]  %s  %s", format_time(job.next_run), job.name)
+
+        for job in self.crontab.values():
+            if job.active or job.name in jobs:
+                continue
+            self.log.info("[inactive]  %s  %s", format_time(self.time_provider.infinity), job.name)
 
     #
     # === Scheduling
     #
-    def get_waiting_jobs(self):
-        """Return a list of one or more jobs that are waiting to be started
-           next.
-        """
-        jobs = {}
-        for job in self.jobs:
-            if not job.active or (job.state == WAITING and job.next_run < datetime.datetime.now()):
-                continue
-            timestamp = job.next_run.timestamp()
-            jobs.setdefault(timestamp, []).append(job)
-
-        if jobs:
-            return sorted(jobs.items())[0]
-        else:
-            return None, []
-
-    def sleep(self):
-        # Go to sleep, if there is currently no event waiting to be
-        # processed. Find out when the next jobs are going to be
-        # scheduled.
-        timestamp, jobs = self.get_waiting_jobs()
-
-        if timestamp is None:
-            # Sleep until a signal (e.g. SIGCHLD) occurs. This means
-            # that some kind of event is waiting to be processed.
-            try:
-                sleep()
-            except Interrupt:
-                return
-
-        else:
-            # Sleep until the next jobs are about to be started.
-            seconds = timestamp - time.time()
-
-            if seconds > 0:
-                self.log.debug("sleep until %s", time.strftime("%H:%M", time.localtime(timestamp)))
-
-                # If the sleep is interrupted, we throw over our plans
-                # and go back and process the waiting event.
-                try:
-                    sleep(seconds)
-                except Interrupt:
-                    return
-
-            # Schedule the waiting jobs for execution.
-            for job in jobs:
-                job.schedule()
-
-    def process_event(self, event):
-        # First process events that are directed at the Scheduler.
-        if event.name == "reload":
-            self.load()
-
-        elif event.name == "dump":
-            self.dump()
-
-        elif event.name == "started":
-            self.save_state()
-
-        # Pass events on to the jobs.
-        self.bus.process_event(event)
-
-        if event.name == "shutdown":
-            self.running = False
-
     def mainloop(self):
-        while self.running:
-            event = self.bus.get_event()
+        for job in self.startup.values():
+            if job.active:
+                self.enqueue_job(job("reboot"))
 
-            if event is None:
-                self.sleep()
+        self.log.debug("loop enter")
+        while not self.process_signals():
+            self.log.debug("loop iterate")
+            self.process_pending_jobs()
+            self.process_finished_jobs()
+            self.process_waiting_jobs()
+            self.wait()
+        self.log.debug("loop exit")
+
+        self.shutdown()
+
+    def process_signals(self):
+        """Process signals that have accumulated, return True if a termination
+           signal has been received.
+        """
+        while self.signals:
+            signum = self.signals.pop(0)
+
+            # First process events that are directed at the Scheduler.
+            if signum == signal.SIGINT:
+                self.log.warn("received SIGINT signal, interrupting")
+                return True
+
+            elif signum == signal.SIGTERM:
+                self.log.warn("received SIGTERM signal, terminating")
+                return True
+
+            elif signum == signal.SIGUSR1:
+                self.log.debug("received SIGUSR1 signal, dumping state")
+                self.dump()
+
+            elif signum == signal.SIGHUP:
+                self.log.debug("received SIGHUP signal, reloading crontab")
+                self.load()
+
+            elif signum == signal.SIGCHLD:
+                self.log.debug("received SIGCHLD signal")
+
             else:
-                self.process_event(event)
+                self.log.warn("got unsupported signal %d" % signum)
+
+        return False
+
+    def process_pending_jobs(self):
+        """Go through the crontab and enqueue jobs that are supposed to be
+           scheduled.
+        """
+        now = self.time_provider.now()
+        for job in self.crontab.values():
+            if job.active and job.next_run <= now:
+                self.enqueue_job(job(job.next_trigger))
+                job.advance()
+
+    def process_finished_jobs(self):
+        """Go through the list of running jobs and look for jobs that have
+           finished.
+        """
+        for job in list(self.running.values()):
+            if job.has_finished():
+                self.running.pop(job.group)
+                job.finalize()
+                self.mailer.send_job_mail(job)
+                job.close()
+
+                for j in self.crontab.values():
+                    if j.active and job.name in j.post:
+                        self.enqueue_job(j("post"))
+
+                        # Reset the interval timestamp generator.
+                        if j.interval is not None:
+                            j.interval.reset_timestamp_generator(j.time_provider.next_minute())
+
+    def process_waiting_jobs(self):
+        """Go through the queues and start a waiting job for each queue that
+           has currently no running job.
+        """
+        for name, queue in sorted(self.queues.items(), reverse=False):
+            if not queue:
+                continue
+            while queue and queue[0].group not in self.running:
+                job = queue.pop(0)
+                self.start_job(job)
+
+    def wait(self):
+        next_run = self.time_provider.infinity
+
+        for job in self.crontab.values():
+            if job.active and job.next_run < next_run:
+                next_run = job.next_run
+
+        if next_run is not self.time_provider.infinity:
+            sleep = next_run - self.time_provider.now()
+        else:
+            sleep = self.time_provider.timedelta(minutes=60)
+
+        seconds = sleep.total_seconds()
+
+        if seconds > 0:
+            # FIXME
+            self.log.debug("sleep until %s", (self.time_provider.now() + sleep).strftime("%H:%M"))
+            self.time_provider.sleep(seconds)
+
+    def shutdown(self):
+        self.log.debug("shutting down ...")
+        for job in self.running.values():
+            job.terminate()
+            job.finalize()
+            self.mailer.send_job_mail(job)
+            job.close()
+        self.save_state()
+        self.log.debug("shutting down done")
+
+    def start_job(self, job):
+        if job.start():
+            self.running[job.group] = job
+
+    def enqueue_job(self, job):
+        running_job = self.running.get(job.group)
+        queue = self.queues.get(job.group, [])
+        names = set(j.name for j in queue)
+
+        if job.conflict == "kill":
+            if running_job is not None and running_job.name == job.name:
+                job.log.debug("queue %s blocked by %s", job.group, running_job)
+                running_job.log.warn("scheduling conflict: exceeding runtime -> kill")
+                running_job.terminate()
+                queue.append(job)
+                self.mailer.send_conflict_mail(job, running_job, True)
+            elif job.name in names:
+                job.log.debug("queue %s blocked by %s", job.group, list(j for j in queue if j.name == job.name)[0])
+                job.log.warn("scheduling conflict: wait congestion -> skip")
+                self.mailer.send_conflict_mail(job, running_job, False)
+            else:
+                queue.append(job)
+
+        elif job.conflict == "skip":
+            if running_job is not None and running_job.name == job.name:
+                job.log.debug("queue %s blocked by %s", job.group, running_job)
+                running_job.log.warn("scheduling conflict: exceeding runtime -> skip")
+                self.mailer.send_conflict_mail(job, running_job, True)
+            elif job.name in names:
+                job.log.debug("queue %s blocked by %s", job.group, list(j for j in queue if j.name == job.name)[0])
+                job.log.warn("scheduling conflict: wait congestion -> skip")
+                self.mailer.send_conflict_mail(job, running_job, False)
+            else:
+                queue.append(job)
+
+        else:
+            queue.append(job)
+
+        self.queues[job.group]= queue
 

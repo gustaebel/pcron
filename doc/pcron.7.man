@@ -1,0 +1,57 @@
+NAME
+  pcron - pcron(1)'s method of operation
+
+
+QUEUES
+  pcron(1) provides simple fifo-based scheduling. Its scheduler manages a set
+  of queues where waiting job instances can line up. By default, each job has
+  its own separate queue. This guarantees that two instances of the same job
+  will never run simultaneously, e.g. when a new instance is created while
+  a previous instance's command is still running. It is also possible to
+  assign different jobs to the same queue, so that all scheduled instances run
+  one after the other regardless of the job they belong to.
+
+  Queues have both advantages and disadvantages:
+
+  - Pro: Instances of the same job cannot overlap.
+  - Pro: Stress on limited resources (CPU, disk, network) can be decreased by
+    grouping similar jobs. No need to work out an optimal schedule.
+  - Con: Commands may be delayed which may undesirable when using time-based
+    schedules.
+  - Con: Possibility of scheduling conflicts which may lead to congestion.
+
+
+CONFLICTS
+  cron(1) provides a simple method to resolve scheduling conflicts, i.e.
+  conflicts between instances of the same job piling up in a queue. These
+  schedule conflicts arise when jobs take unexpectedly long or their schedule
+  interval is too frequent. It is not regarded as a conflict if job
+  instances of different jobs pile up in the same queue.
+
+  ignore  
+    This is the default behaviour. The job is appended to the queue regardless of
+    the fact that other instances of the same job are already in the queue.
+    - Pro: No jobs are skipped.
+    - Con: Jobs may cumulate uncontrollably, creating a huge backlog.
+    - When to use: Use when it is important that a job is run an exact number
+      of times, and you're absolutely sure that congestion effects will resolve
+      by themselves over time.
+
+  skip  
+    The job is appended to the queue unless there is another instance of itself
+    already waiting. If another instance of the job is currently running, the
+    new instance is appended to the queue nevertheless.
+    - Pro: Jobs will not cumulate uncontrollably.
+    - Pro: Although the frequency may be lower, jobs are guaranteed to be run
+      at some point.
+    - Con: Jobs may run less frequent.
+
+  kill  
+    The job is appended to the queue unless there is another instance of itself
+    already waiting. If another instance of the job is currently running, the other
+    instance is killed and the new instance is appended to the queue.
+    - Pro: No jobs are skipped.
+    - Pro: Jobs will not cumulate uncontrollably.
+    - Con: Running jobs may be interrupted, leaving behind incomplete results.
+    - Con: It is possible that a job is completed not even once.
+    - When to use: Use when running the job often is more important than a complete result.

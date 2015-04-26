@@ -1,4 +1,3 @@
-# coding: utf8
 # -----------------------------------------------------------------------
 #
 # pcron - a periodic cron-like job scheduler.
@@ -21,133 +20,113 @@
 # -----------------------------------------------------------------------
 
 import os
-import io
 import pwd
-import datetime
-import subprocess
-import logging
 import signal
+import collections
 
-from .shared import RUNNING, WAITING, SLEEPING
 from .time import format_time
 from .run import Runner, RunnerError
 from .shared import CrontabError
-
-SIGNAL_NAMES = dict((getattr(signal, name), name) \
-    for name in dir(signal) if name.startswith("SIG") and "_" not in name)
-
-
-MAIL_INFO = """\
-From: pcron <%(username)s>
-To: %(mailto)s
-Subject: pcron: %(timestamp)s %(job)s
-
-"""
-
-MAIL_ERROR = """\
-From: pcron <%(username)s>
-To: %(mailto)s
-Subject: pcron: ERROR! %(timestamp)s %(job)s
-
-Job %(job)s exited with error code %(exitcode)s.
-
-"""
-
-MAIL_KILLED = """\
-From: pcron <%(username)s>
-To: %(mailto)s
-Subject: pcron: KILLED! %(timestamp)s %(job)s
-
-Job %(job)s was killed by signal %(signal)s.
-
-"""
-
-MAIL_SKIP_RUNNING = """\
-From: pcron <%(username)s>
-To: %(mailto)s
-Subject: pcron: WARNING! %(timestamp)s %(job)s
-
-The scheduled run for job %(job)s was skipped because another instance
-of the job is still running.
-
-    %(command)s
-
-The process is running with pid %(pid)s.
-"""
-
-MAIL_SKIP_WAITING = """\
-From: pcron <%(username)s>
-To: %(mailto)s
-Subject: pcron: WARNING! %(timestamp)s %(job)s
-
-The scheduled run for job %(job)s was skipped because another instance
-of the job is already waiting to start.
-"""
-
-
-class Jobs:
-
-    def __init__(self):
-        self.jobs = {}
-
-    def __contains__(self, job_id):
-        return job_id in self.jobs
-
-    def __getitem__(self, job_id):
-        return self.jobs[job_id]
-
-    def __setitem__(self, job_id, job):
-        self.jobs[job_id] = job
-
-    def __iter__(self):
-        yield from self.jobs.values()
-
-    def remove(self, job_id):
-        del self.jobs[job_id]
-
-    def sorted(self, key):
-        return sorted((job for job in self if job.active), key=key)
-
-    def inactive(self):
-        yield from (job for job in self if not job.active)
+from .field import String, Boolean, Time, Interval, ListOfStrings
 
 
 class Job:
+    """A class that contains a single job from a crontab.ini file.
+    """
+    # pylint:disable=no-member
 
-    last_run = datetime.datetime.min
-    scheduled_run = datetime.datetime.min
-    next_run = datetime.datetime.max
+    Runner = Runner
 
-    duration = datetime.timedelta(seconds=0)
+    _name_regex = r"^\w+(-\w+|\.\w+)*$"
+    _locale_regex = r"^[a-zA-Z]{2}_[a-zA-Z]{2}\.\w+$"
 
-    mandatory_keys = ("id", "command", "active")
-    scheduling_keys = ("time", "interval", "post")
-    allowed_keys = ("block", "condition", "mail", "mailto", "sendmail", "conflict")
+    fields = collections.OrderedDict([
+        ("name",        String(regex=_name_regex)),
+        ("command",     String()),
+        ("active",      Boolean(default=True)),
+
+        ("condition",   String(default=None)),
+        ("group",       String(default=lambda j: j.name, regex=_name_regex)),
+        ("conflict",    String(default="ignore", choices=("ignore", "skip", "mail", "kill"))),
+
+        ("time",        Time(default=None, schedule=True)),
+        ("interval",    Interval(default=None, schedule=True)),
+        ("post",        ListOfStrings(default=[], schedule=True)),
+
+        ("locale",      String(default="en_US.UTF-8", regex=_locale_regex)),
+        ("mail",        String(default="error", choices=("never", "always", "error", "output"))),
+        ("mailto",      String(default=pwd.getpwuid(os.getuid()).pw_name)),
+        ("sendmail",    String(default="/usr/lib/sendmail"))
+    ])
+
+    _serial = collections.Counter()
 
     #
     # === Base methods
     #
-    def __init__(self, bus, init_code):
-        self.bus = bus
-        self.init_code = init_code
+    @classmethod
+    def new(cls, name, info):
+        job = type(name, (cls,), {})
 
+        info = info.copy()
+        has_schedule = False
+        for name, field in job.fields.items():
+            try:
+                value = info.pop(name)
+            except KeyError:
+                setattr(job, name, field.get_default(job))
+            else:
+                setattr(job, name, field(value))
+                if field.schedule:
+                    has_schedule = True
+
+        for key in info:
+            raise CrontabError("variable %r not allowed" % key)
+
+        if not has_schedule:
+            raise CrontabError("missing scheduling information")
+
+        return job
+
+    def __init__(self, trigger):
+        self.trigger = trigger
+        self.id = "%s-%04d" % (self.name, self._serial[self.name])
+        self._serial[self.name] += 1
+
+        self.log = self.logger.new(self.id)
+
+        # FIXME rename this_run?
+        self.this_run = self.time_provider.now()
         self.runner = None
-        self.task = None
-        self.state = SLEEPING
 
-        self.record = pwd.getpwuid(os.getuid())
-        self.username = self.record.pw_name
+        self.environ = self.create_environ(self.locale, self.directory, self.name,
+                                           self.id, self.group)
 
+        self.working_dir = os.path.join(self.directory, "jobs", self.name)
+        self.username = self.environ["USER"]
+
+    @staticmethod
+    def create_environ(locale, directory, name, id, group):
         # Prepare a basic environment for the job.
-        self.environ = {
-            "USER":     self.record.pw_name,
-            "LOGNAME":  self.record.pw_name,
-            "UID":      str(self.record.pw_uid),
-            "GID":      str(self.record.pw_gid),
-            "HOME":     self.record.pw_dir,
-            "SHELL":    self.record.pw_shell,
-            "PATH":     "/usr/local/bin:/usr/bin:/bin" if self.record.pw_uid > 0 else \
-                        "/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin"
+        record = pwd.getpwuid(os.getuid())
+
+        if not os.access(record.pw_shell, os.X_OK):
+            raise CrontabError("shell %s is inaccessible" % record.pw_shell)
+
+        return {
+            "USER":     record.pw_name,
+            "LOGNAME":  record.pw_name,
+            "UID":      str(record.pw_uid),
+            "GID":      str(record.pw_gid),
+            "HOME":     record.pw_dir,
+            "SHELL":    record.pw_shell,
+            "PATH":     "/usr/local/bin:/usr/bin:/bin" if record.pw_uid > 0 else \
+                        "/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin",
+            "LANG":     locale,
+            "PCRONDIR": directory,
+            "JOB_NAME": name,
+            "JOB_ID":   id,
+            "JOB_GROUP": group
         }
 
     def __str__(self):
@@ -157,256 +136,114 @@ class Job:
         return "<job-%s %s>" % (self.id, self.next_run)
 
     #
-    # === Job definition
+    # === Scheduling
     #
     @classmethod
-    def check(cls, definition):
-        for key in cls.mandatory_keys:
-            if key not in definition:
-                raise CrontabError("%s: mandatory variable %r not found" % (definition["id"], key))
+    def init(cls, time_provider, logger, directory, init_code):
+        cls.init_code = init_code
+        cls.time_provider = time_provider
+        cls.logger = logger
+        cls.directory = directory
 
-        if not set(definition.keys()) & set(cls.scheduling_keys):
-            raise CrontabError("%s: missing scheduling information" % definition["id"])
+        if cls.time != "@reboot":
+            cls._timestamp_generator = cls.timestamp_generator()
+            cls.advance()
 
-        for key in definition:
-            if key not in cls.mandatory_keys + cls.scheduling_keys + cls.allowed_keys:
-                raise CrontabError("%s: variable %r not allowed" % (definition["id"], key))
+    @classmethod
+    def advance(cls):
+        cls.next_trigger, cls.next_run = next(cls._timestamp_generator)
 
-    def update(self, definition):
-        # pylint:disable=attribute-defined-outside-init
-        self.id = definition["id"]
+    @classmethod
+    def timestamp_generator(cls):
+        infinity = cls.time_provider.infinity
+        now = cls.time_provider.next_minute()
 
-        self.active = definition["active"]
+        if cls.time is not None:
+            time_generator = cls.time.timestamp_generator(now)
+        else:
+            time_generator = None
 
-        self.command = definition["command"]
-        self.time = definition.get("time", None)
-        self.interval = definition.get("interval", None)
-        self.post = definition.get("post", set())
+        if cls.interval is not None:
+            interval_generator = cls.interval.timestamp_generator(now)
+        else:
+            interval_generator = None
 
-        self.block = definition.get("block", self.id)
-        self.condition = definition.get("condition", None)
-
-        self.mail = definition.get("mail", "error")
-        self.mailto = definition.get("mailto", self.username)
-        self.sendmail = definition.get("sendmail", "/usr/lib/sendmail")
-
-        self.conflict = definition.get("conflict", "mail")
-
-        self.environ["JOB_ID"] = self.id
-        self.environ["JOB_BLOCK"] = self.block
-
-        self.log = logging.getLogger(self.id)
-
-        self.calculate_next_run()
-
-    #
-    # === Runtime
-    #
-    def setup(self):
-        """Start the mainloop task for this job.
-        """
-        self.task = self.mainloop()
-        next(self.task)
-        return self.task
-
-    def mainloop(self):
-        """Process events from the bus in an endless loop.
-        """
+        time = infinity
+        interval = infinity
         while True:
-            event = (yield)
+            if time is infinity and time_generator is not None:
+                time = next(time_generator)
+            if interval is infinity and interval_generator is not None:
+                interval = next(interval_generator)
 
-            if event.name == "shutdown" or (event.name == "quit" and event.job == self.id):
-                # If pcron is stopped by SIGINT or SIGTERM all running child
-                # processes are terminated implicitly. This code is executed
-                # only if a running job is removed from the crontab.
-                if self.state == RUNNING:
-                    self.terminate()
-                    self.poll()
-
-                self.log.debug("quit")
-                break
-
-            elif event.name == "child":
-                self.poll()
-
-            elif event.name == "schedule" and event.job == self.id:
-                self.bus.post("block", block=self.block, job=self.id)
-
-            elif event.name == "stop" and event.job in self.post:
-                self.bus.post("block", block=self.block, job=self.id)
-
-            elif event.name == "start" and event.job == self.id:
-                self.last_run = datetime.datetime.now()
-
-                if self.condition is not None:
-                    run = self.test_condition()
-                    self.log.debug("test condition: %s", run)
-                else:
-                    run = True
-
-                if run:
-                    self.bus.post("started", job=self.id)
-                    try:
-                        self.start()
-                    except RunnerError as exc:
-                        self.log.error(str(exc))
-                        self.state = SLEEPING
-                        self.bus.post("unblock", block=self.block, job=self.id)
-                else:
-                    self.state = SLEEPING
-                    self.bus.post("unblock", block=self.block, job=self.id)
+            if time <= interval:
+                yield "time", time
+                time = infinity
+            else:
+                yield "interval", interval
+                interval = infinity
 
     #
-    # === Scheduling / Execution
+    # === Process
     #
-    def schedule(self):
-        if self.state == RUNNING:
-            self.log.warn("scheduling conflict: exceeding runtime")
-            self.log.warn("conflict handler: %s", self.conflict)
-            if self.conflict == "kill":
-                self.terminate()
-            elif self.conflict in ("skip", "mail"):
-                if self.conflict == "mail":
-                    self.send_message(MAIL_SKIP_RUNNING, _info={"pid": self.runner.get_pid()})
-                self.scheduled_run = datetime.datetime.now()
-                self.calculate_next_run()
-
-        elif self.state == WAITING:
-            self.log.warn("scheduling conflict: wait congestion")
-            if self.conflict == "mail":
-                self.send_message(MAIL_SKIP_WAITING)
-            self.calculate_next_run()
-
-        else:
-            self.state = WAITING
-            self.bus.post("schedule", job=self.id)
-            self.scheduled_run = datetime.datetime.now()
-            self.calculate_next_run()
-
-    def calculate_next_run(self):
-        if self.time is None and self.interval is None:
-            self.next_run = datetime.datetime.max
-        else:
-            # FIXME improve this
-            self.next_run = datetime.datetime.now().replace(second=0, microsecond=0)
-            while True:
-                self.next_run += datetime.timedelta(minutes=1)
-                if self.time is not None and self.time.match(self.next_run):
-                    break
-                elif self.interval is not None and self.interval.match(self.next_run, self.scheduled_run):
-                    break
+    def has_finished(self):
+        return self.runner is None or self.runner.has_finished()
 
     def start(self):
-        """Start the job command.
+        """Start the job process.
         """
-        self.log.info("start")
-        self.log.debug("command: %s", self.command)
-
-        self.state = RUNNING
-
-        # Start the process.
-        self.runner = Runner(self.command, self.environ, self.init_code)
-        self.runner.start()
-
-    def poll(self):
-        """Check if the job command is still running.
-        """
-        if self.runner is not None and self.runner.has_finished():
-            self.finalize()
-            self.runner = None
-            self.state = SLEEPING
-            self.bus.post("unblock", block=self.block, job=self.id)
-            self.bus.post("stop", job=self.id)
+        self.log.debug("start (%s)", self.trigger)
+        if self.condition is None or self.test_condition():
+            # Start the process.
+            self.log.info("execute: %s", self.command)
+            try:
+                self.runner = self.Runner(self.working_dir, self.time_provider,
+                                          self.command, self.environ, self.init_code)
+            except (OSError, RunnerError) as exc:
+                self.log.warn(str(exc))
+                return False
+            else:
+                return True
 
     def terminate(self):
-        """Terminate the running job command prematurely.
+        """Terminate the running job process ahead of time.
         """
-        self.log.debug("terminate")
+        if self.runner is None:
+            return
+
         try:
             self.runner.terminate()
-        except RunnerError as exc:
+        except (OSError, RunnerError) as exc:
             self.log.warn(str(exc))
 
     def finalize(self):
-        """Check if the job command failed and send emails.
-        """
-        # Test if the process exited with an error condition, deciding whether
-        # to send a mail or not.
-        send = self.mail == "always"
-        if self.runner.returncode != 0:
-            send = self.mail != "never"
+        if self.runner is None:
+            return
 
-        if self.runner.returncode > 0:
-            self.log.warn("exit status: %s", self.runner.returncode)
-        else:
-            self.log.debug("exit status: 0")
+        assert self.runner.has_finished()
 
-        self.duration = self.runner.get_duration()
-        self.log.info("finished")
-        self.log.debug("duration %s", format_time(self.duration))
-        if self.next_run < datetime.datetime.max:
-            self.log.info("next run %s", self.next_run)
+        self.runner.finalize()
+        self.log.debug("duration: %s", format_time(self.runner.get_duration()))
+        if self.next_run < self.time_provider.infinity:
+            self.log.info("next run: %s", self.next_run)
 
-        # Check whether to send a mail depending on the output.
-        if self.mail == "output":
-            send = self.runner.get_output_size() > 0
+    def close(self):
+        if self.runner is None:
+            return
 
-        # Send the message if necessary.
-        if send:
-            # Prepare the email message's text.
-            if self.runner.returncode == 0:
-                text = MAIL_INFO
-                info = {}
-            elif self.runner.returncode > 0:
-                text = MAIL_ERROR
-                info = {"exitcode": self.runner.returncode}
-            else:
-                text = MAIL_KILLED
-                info = {"signal": SIGNAL_NAMES[abs(self.runner.returncode)]}
-
-            self.send_message(text, self.runner.get_output(), info)
-
-        # Pull down the Runner.
         self.runner.close()
 
-    def send_message(self, text, payload=(), _info=None):
-        # Collect required information.
-        if self.scheduled_run > datetime.datetime.min:
-            timestamp = self.scheduled_run
-        else:
-            timestamp = self.last_run
-
-        info = {
-            "job":      str(self),
-            "mailto":   self.mailto,
-            "username": self.username,
-            "timestamp": format_time(timestamp),
-            "command":  self.command
-        }
-        if _info is not None:
-            info.update(_info)
-
-        text %= info
-
-        self.log.debug("send mail to %s", self.mailto)
-        try:
-            process = subprocess.Popen([self.sendmail, self.mailto], stdin=subprocess.PIPE)
-            process.stdin.write(text.encode("utf8"))
-            for line in payload:
-                process.stdin.write(line)
-            process.stdin.close()
-        except OSError as exc:
-            self.log.error("the following error occurred using %s", self.sendmail)
-            self.log.error(str(exc))
-
     def test_condition(self):
-        runner = Runner(self.condition, self.environ, self.init_code)
+        # FIXME Do this asynchronously.
         try:
-            try:
-                runner.start()
-                return runner.wait() == 0
-            except RunnerError as exc:
-                self.log.warn(str(exc))
-        finally:
-            runner.close()
+            with Runner(self.working_dir, self.time_provider, self.condition,
+                        self.environ, self.init_code) as runner:
+                if runner.wait() == 0:
+                    self.log.debug("test %r: true", self.condition)
+                    return True
+        except (OSError, RunnerError) as exc:
+            self.log.warn(str(exc))
+
+        self.log.debug("test %r: false", self.condition)
+        return False
 

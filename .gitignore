@@ -1,2 +1,7 @@
 __pycache__
 *.pyc
+*~
+logfile.txt
+*.1
+*.5
+*.7

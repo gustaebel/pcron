@@ -1,4 +1,3 @@
-# coding: utf8
 # -----------------------------------------------------------------------
 #
 # pcron - a periodic cron-like job scheduler.
@@ -20,17 +19,21 @@
 #
 # -----------------------------------------------------------------------
 
+# FIXME Rename to process.Process.
+
 import os
 import time
 import subprocess
-import datetime
 import tempfile
+import shutil
+import hashlib
+
+from . import SUPPORTED_SHELLS
+from .time import IntervalSpec
 
 
 class RunnerError(Exception):
     pass
-
-SUPPORTED_SHELLS = set(["sh", "bash", "ksh", "zsh", "dash"])
 
 # Prepare shell script code with allexport and errexit properties set during
 # the execution of init_code. We need a bourne-compatible shell for that.
@@ -43,108 +46,81 @@ set +ea
 
 
 class Runner:
-    # TODO make this a context manager.
 
-    def __init__(self, command, environ, init_code):
+    def __init__(self, working_dir, time_provider, command, environ, init_code):
+        self.working_dir = working_dir
+        self.time_provider = time_provider
         self.command = command
         self.environ = environ
         self.init_code = init_code
 
-        self.shell = environ["SHELL"]
-        self.process = None
-        self.output = None
+        try:
+            os.makedirs(self.working_dir)
+        except FileExistsError:
+            pass
 
         # Create a temporary file for the command output.
-        fd, self.output_name = tempfile.mkstemp(prefix="tmp.pcron.")
-        os.close(fd)
+        self.output_path = os.path.join(self.working_dir, "output.txt")
 
         # Create a temporary file for the command script.
-        self.script = tempfile.NamedTemporaryFile(prefix="tmp.pcron-cmd.", mode="w", delete=False)
-        self.script_name = self.script.name
+        self.script_path = os.path.join(self.working_dir, "command.sh")
 
-        # Write the initialization code and the command to the script file.
-        code = SHELL_CODE % (self.init_code, self.command)
-        self.script.write(code)
-        self.script.close()
+        with open(self.script_path, "w") as fobj:
+            # Write the initialization code and the command to the script file.
+            fobj.write(SHELL_CODE % (self.init_code, self.command))
 
-    def start(self):
-        # pylint:disable=attribute-defined-outside-init
-        self.start_time = datetime.datetime.now()
+        self.start_time = self.time_provider.now()
         self.stop_time = None
-        self.finished = False
-        self.output_size = None
+
+        shell = self.environ["SHELL"]
 
         # The user's shell must be bourne shell compatible.
-        if os.path.basename(self.shell) not in SUPPORTED_SHELLS:
-            raise RunnerError("unsupported shell %s" % self.shell)
+        if os.path.basename(shell) not in SUPPORTED_SHELLS:
+            raise RunnerError("unsupported shell %s" % shell)
 
         # Start the command in the user's shell.
-        try:
-            self.process = subprocess.Popen([self.shell, self.script_name],
-                    env=self.environ,
-                    stdout=open(self.output_name, "wb"),
-                    stderr=subprocess.STDOUT)
+        self.output = open(self.output_path, "w+b")
+        self.process = subprocess.Popen([shell, self.script_path], cwd=self.working_dir,
+                                        env=self.environ, stdout=self.output, stderr=subprocess.STDOUT)
 
-        except OSError as exc:
-            raise RunnerError(str(exc))
+    def has_finished(self):
+        return self.process.poll() is not None
 
     def wait(self):
-        self.process.wait()
-        return self.process.returncode
+        return self.process.wait()
 
     def terminate(self):
-        tries = 5
-        while tries > 0 and not self.has_finished():
+        for t in range(3):
             # If SIGTERM doesn't succeed we send SIGKILL.
-            if tries > 2:
+            if t < 2:
                 self.process.terminate()
             else:
                 self.process.kill()
+
             time.sleep(1)
-            tries -= 1
+            if self.has_finished():
+                break
 
         if not self.has_finished():
             # We give up.
             raise RunnerError("command %r could not be terminated" % self.command)
 
-    def has_finished(self):
-        # pylint:disable=attribute-defined-outside-init
-        if self.finished:
-            return True
+    def finalize(self):
+        # Save the time when the process ended.
+        self.stop_time = self.time_provider.now()
 
-        if self.process is not None and self.process.poll() is None:
-            return False
-        else:
-            # Save the time when the process ended.
-            self.stop_time = datetime.datetime.now()
-
-            # Save the size of the command output.
-            self.output_size = os.path.getsize(self.output_name)
-
-            # Reopen the logfile for reading.
-            self.output = open(self.output_name, "rb")
-
-            self.finished = True
-            return True
-
-    def get_start_time(self):
-        return self.start_time
+        self.output.flush()
+        self.output.seek(0)
 
     def get_duration(self):
-        if self.finished:
+        if self.has_finished():
             return self.stop_time - self.start_time
         else:
-            return datetime.datetime.now() - self.start_time
-
-    def get_output_size(self):
-        return self.output_size
-
-    def get_output(self):
-        return self.output
+            return self.time_provider.now() - self.start_time
 
     def get_pid(self):
-        if self.finished:
-            return "none"
+        if self.has_finished():
+            return -1
         else:
             return str(self.process.pid)
 
@@ -153,8 +129,11 @@ class Runner:
         return self.process.returncode
 
     def close(self):
-        if self.output is not None:
-            self.output.close()
-        os.remove(self.output_name)
-        os.remove(self.script_name)
+        self.output.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
 

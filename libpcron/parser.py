@@ -1,4 +1,3 @@
-# coding: utf8
 # -----------------------------------------------------------------------
 #
 # pcron - a periodic cron-like job scheduler.
@@ -23,11 +22,10 @@
 import os
 import re
 import configparser
-import logging
+import collections
 
-from .shared import CrontabError, CrontabEmptyError
+from .shared import CrontabError, CrontabEmptyError, Logger
 from .time import TimeSpec, TimeSpecError, IntervalSpec, IntervalSpecError
-from .job import Job
 
 
 def extract_loglevel_from_crontab(path):
@@ -39,36 +37,22 @@ def extract_loglevel_from_crontab(path):
 
     value = parser.defaults().get("loglevel")
     if value is None:
-        return logging.WARN
+        return Logger.WARN
 
     else:
         try:
-            return {"quiet": logging.WARN,
-                    "info": logging.INFO,
-                    "debug": logging.DEBUG}[value]
+            return Logger.levels[value]
         except KeyError:
             raise CrontabError("invalid conflict value:%r" % value)
 
 
 class CrontabParser:
 
-    def __init__(self, path):
+    def __init__(self, path, Job):
         self.path = path
-        self.parser = configparser.RawConfigParser(default_section="default")
+        self.Job = Job
 
-        self.converters = {
-            "command":   self.convert_command,
-            "time":      self.convert_time,
-            "interval":  self.convert_interval,
-            "post":      self.convert_post,
-            "condition": self.convert_condition,
-            "block":     self.convert_block,
-            "mail":      self.convert_mail,
-            "mailto":    self.convert_mailto,
-            "sendmail":  self.convert_sendmail,
-            "active":    self.convert_active,
-            "conflict":  self.convert_conflict
-        }
+        self.parser = configparser.ConfigParser(interpolation=None)
 
     def parse(self):
         try:
@@ -81,107 +65,39 @@ class CrontabParser:
         if not self.parser.sections():
             raise CrontabEmptyError("crontab is empty")
 
-        jobs = {}
-        for section in self.parser.sections():
-            job = {}
-            for option in self.parser.options(section):
+        infos = collections.OrderedDict()
+        for name in self.parser.sections():
+            try:
+                parent, _ = name.rsplit(".", 1)
+            except ValueError:
+                info = infos.get("default", {}).copy()
+            else:
+                if parent in infos:
+                    info = infos[parent].copy()
+                else:
+                    raise CrontabError("missing parent job %s" % parent)
+
+            for option in self.parser.options(name):
                 if option == "loglevel":
+                    # FIXME ATM loglevel option is global only.
                     continue
+                info[option] = self.parser.get(name, option)
 
-                value = self.parser.get(section, option)
+            info["name"] = name
+            infos[name] = info
 
-                try:
-                    converter = self.converters[option]
-                except KeyError:
-                    raise CrontabError("invalid variable:%r" % option)
-
-                job[option] = converter(value)
-
-            job["active"] = job.get("active", True)
-            job["id"] = section
-            Job.check(job)
-            jobs[job["id"]] = job
-
-        return jobs
-
-    # ------------------------------------------------------------------------
-    #  Check and eval methods for job variables.
-    # ------------------------------------------------------------------------
-    @classmethod
-    def _convert_boolean(cls, value):
-        true = ("true", "yes", "t", "y", "1")
-        false = ("false", "no", "f", "n", "0")
         try:
-            if value.lower() not in true + false:
-                raise ValueError
-            value = value.lower() in true
-        except ValueError:
-            raise CrontabError("invalid active value:%r" % value)
-        return value
+            infos.pop("default")
+        except KeyError:
+            pass
 
-    @classmethod
-    def convert_command(cls, value):
-        return value
-
-    @classmethod
-    def convert_time(cls, value):
-        try:
-            return TimeSpec(value)
-        except TimeSpecError as exc:
-            raise CrontabError(str(exc))
-
-    @classmethod
-    def convert_interval(cls, value):
-        try:
-            return IntervalSpec(value)
-        except IntervalSpecError as exc:
-            raise CrontabError(str(exc))
-
-    @classmethod
-    def convert_post(cls, value):
-        # FIXME check job ids
-        return set(value.split())
-
-    @classmethod
-    def convert_condition(cls, value):
-        return cls.convert_command(value)
-
-    @classmethod
-    def convert_block(cls, value):
-        # FIXME case?
-        if not re.match(r"^[\w\-]+$", value):
-            raise CrontabError("invalid block:%r" % value)
-        return value
-
-    @classmethod
-    def convert_mail(cls, value):
-        if value not in ("never", "always", "error", "output"):
-            raise CrontabError("invalid mail value:%r" % value)
-        return value
-
-    @classmethod
-    def convert_mailto(cls, value):
-        # We don't care for valid email addresses.
-        return value
-
-    @classmethod
-    def convert_sendmail(cls, value):
-        if not os.path.isabs(value):
-            raise CrontabError("sendmail path must be absolute:%r" % value)
-        if not os.access(value, os.R_OK | os.X_OK):
-            raise CrontabError("sendmail path not executable:%r" % value)
-        return value
-
-    @classmethod
-    def convert_active(cls, value):
-        try:
-            return cls._convert_boolean(value)
-        except ValueError:
-            raise CrontabError("invalid active value:%r" % value)
-
-    @classmethod
-    def convert_conflict(cls, value):
-        if value not in ("skip", "mail", "kill", "postpone"):
-            raise CrontabError("invalid conflict value:%r" % value)
-        return value
+        startup = collections.OrderedDict()
+        jobs = collections.OrderedDict()
+        for name, info in infos.items():
+            job = self.Job.new(name, info)
+            if info.get("time") == "@reboot":
+                startup[name] = job
+            else:
+                jobs[name] = job
+        return startup, jobs
 

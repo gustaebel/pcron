@@ -6,19 +6,22 @@ RELEASE := pcron $(shell python ../setup.py -V)
 
 all: manpages
 
-manpages: pcron.1 pcrond.1 pcrontab.1 pcrontab.5
+sources := $(basename $(wildcard *.man))
 
-pcron.1: pcron.man ../libpcron/__init__.py
-	txt2man -s 1 -t pcron -r "$(RELEASE)" pcron.man 2>&1 > pcron.1
+manpages: $(sources)
 
-pcrond.1: pcrond.man ../libpcron/__init__.py
-	txt2man -s 1 -t pcrond -r "$(RELEASE)" pcrond.man 2>&1 > pcrond.1
+%.1: %.1.man ../libpcron/__init__.py
+	$(txt2man)
 
-pcrontab.1: pcrontab1.man ../libpcron/__init__.py
-	txt2man -s 1 -t pcrontab -r "$(RELEASE)" pcrontab1.man 2>&1 > pcrontab.1
+%.5: %.5.man ../libpcron/__init__.py
+	$(txt2man)
 
-pcrontab.5: pcrontab5.man ../libpcron/__init__.py
-	txt2man -s 5 -t pcrontab -r "$(RELEASE)" pcrontab5.man 2>&1 > pcrontab.5
+%.7: %.7.man ../libpcron/__init__.py
+	$(txt2man)
+
+define txt2man =
+txt2man -s $(subst .,,$(suffix $(suffix $@))) -t $(basename $(basename $<)) -r "$(RELEASE)" $< 2>&1 > $@
+endef
 
 clean:
-	$(RM) *.1 *.5
+	$(RM) *.1 *.5 *.7

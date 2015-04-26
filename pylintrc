@@ -1,0 +1,14 @@
+[REPORTS]
+output-format=colorized
+reports=no
+
+[MISCELLANEOUS]
+notes=FIXME,XXX,TODO,TBD
+
+[BASIC]
+# Good variable names which should always be accepted, separated by a comma
+good-names=_,fd,t,dt,td,ts
+
+[MESSAGES CONTROL]
+# I don't care for informational messages (I).
+disable=I,missing-docstring,bad-whitespace,no-self-use

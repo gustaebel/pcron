@@ -1,5 +1,4 @@
 #!/usr/bin/python3
-# coding: utf8
 # -----------------------------------------------------------------------
 #
 # pcron - a periodic cron-like job scheduler.
@@ -23,18 +22,17 @@
 
 import sys
 import os
-import io
-import optparse
+import argparse
 import hashlib
 import tempfile
 import subprocess
 import shutil
 import signal
 
-from libpcron import __version__, __copyright__, ENVIRONMENT_NAME, CRONTAB_NAME
+from libpcron import __version__, __copyright__, ENVIRONMENT_NAME, CRONTAB_NAME, PID_NAME
 from libpcron.parser import CrontabParser, CrontabError, CrontabEmptyError
-from libpcron.scheduler import Scheduler
 from libpcron.run import SHELL_CODE
+from libpcron.job import Job
 
 
 def digest(path):
@@ -42,47 +40,52 @@ def digest(path):
         return hashlib.sha1(fileobj.read()).digest()
 
 
-def list_file(directory, name):
-    path = os.path.join(directory, name)
-
+def list_file(args, name):
+    path = os.path.join(args.directory, name)
     if not os.path.exists(path):
         raise SystemExit("not found: %s" % path)
-    sys.stdout.write(open(path).read())
+
+    with open(path) as fobj:
+        sys.stdout.write(fobj.read())
 
 
-def edit_file(directory, name):
-    path = os.path.join(directory, name)
+def edit_file(args, name):
+    path = os.path.join(args.directory, name)
 
-    fd, tmppath = tempfile.mkstemp(dir=directory, prefix=name, suffix=os.path.splitext(name)[1])
-    os.close(fd)
+    _, tmppath = tempfile.mkstemp(dir=args.directory, prefix=name, suffix=os.path.splitext(name)[1])
+    os.close(_)
+
     try:
         with open(tmppath, "w") as tmp:
-            if opts.action.startswith("edit"):
+            if args.action.startswith("edit"):
                 if os.path.exists(path):
                     with open(path, "r") as fileobj:
                         tmp.write(fileobj.read())
             else:
+                # -i/--import, -I/--import-environment
                 tmp.write(sys.stdin.read())
 
         while True:
-            if opts.action.startswith("edit") and subprocess.call([opts.editor, tmppath]) != 0:
+            if args.action.startswith("edit") and subprocess.call([args.editor, tmppath]) != 0:
                 print("an error occurred, discarding ...")
-                return
+                break
+
             elif os.path.exists(path) and digest(tmppath) == digest(path):
                 print("new %s is unchanged, discarding ..." % name)
-                return
+                break
+
             else:
                 if name == CRONTAB_NAME:
-                    parser = CrontabParser(tmppath)
                     try:
+                        parser = CrontabParser(tmppath, Job)
                         parser.parse()
 
                     except CrontabEmptyError:
                         pass
 
-                    except CrontabError as e:
-                        print("error: %s" % e)
-                        if opts.action.startswith("edit"):
+                    except CrontabError as exc:
+                        print("error: %s" % exc)
+                        if args.action.startswith("edit"):
                             try:
                                 input("Press a key to edit the file again (Ctrl-C to exit) ...")
                             except KeyboardInterrupt:
@@ -91,111 +94,120 @@ def edit_file(directory, name):
                             continue
                         else:
                             return
-                if not opts.no_backup:
+
+                if not args.no_backup:
                     if os.path.exists(path):
                         shutil.copy(path, path + "~")
                 os.rename(tmppath, path)
+
                 print("installed new", name)
+
                 try:
-                    with open(os.path.join(directory, "pcron.pid")) as fileobj:
+                    with open(os.path.join(args.directory, PID_NAME)) as fileobj:
                         pid = int(fileobj.read().strip())
                 except (OSError, ValueError):
-                    # FIXME so what?
-                    pass
+                    raise SystemExit("pid file not found")
                 else:
                     try:
                         os.kill(pid, signal.SIGHUP)
                     except ProcessLookupError:
-                        pass
-                return
+                        raise SystemExit("no such pid %d" % pid)
+                break
 
     finally:
         if os.path.exists(tmppath):
             os.remove(tmppath)
 
 
-def execute(directory, name):
-    parser = CrontabParser(os.path.join(directory, CRONTAB_NAME))
-    try:
-        jobs = parser.parse()
-    except CrontabEmptyError:
-        print("crontab is empty")
-        return
+def execute(args):
+    name = args.execute
 
-    job = jobs.get(name)
+    parser = CrontabParser(os.path.join(args.directory, CRONTAB_NAME), Job)
+    try:
+        startup, crontab = parser.parse()
+    except CrontabEmptyError:
+        raise SystemExit("crontab is empty")
+
+    job = crontab.get(name, startup.get(name))
     if job is None:
         raise SystemExit("no such job %r" % name)
 
-    if job["active"]:
+    if job.active:
         print("WARNING: job %r is not marked as inactive!" % name, file=sys.stderr)
 
-    record, environ = Scheduler.create_environ(directory)
-
-    with open(os.path.join(directory, ENVIRONMENT_NAME)) as fobj:
-        environment = fobj.read()
-
-    with tempfile.NamedTemporaryFile(prefix="tmp.pcron-cmd.", mode="w", delete=False) as script:
-        script.write(SHELL_CODE % (environment, job["command"]))
-
     try:
-        proc = subprocess.Popen([environ["SHELL"], script.name], env=environ)
-        sys.exit(proc.wait())
-    finally:
-        os.remove(script.name)
+        with open(os.path.join(args.directory, ENVIRONMENT_NAME)) as fobj:
+            init_code = fobj.read()
+    except EnvironmentError:
+        init_code = ""
+
+    environ = Job.create_environ(args.directory, name, name + "-0", job.group)
+
+    with tempfile.NamedTemporaryFile(prefix="tmp.pcron-cmd.", mode="w") as script:
+        script.write(SHELL_CODE % (init_code, job.command))
+        script.flush()
+
+        try:
+            proc = subprocess.Popen([environ["SHELL"], script.name], env=environ)
+            sys.exit(proc.wait())
+        except KeyboardInterrupt:
+            pass
 
 
-parser = optparse.OptionParser(usage="%prog [-l|-e] [<options>]",
-        version="%%prog %s - %s" % (__version__, __copyright__))
-parser.add_option("-l", "--list", action="store_const", const="list", dest="action",
-        help="list the crontab")
-parser.add_option("-L", "--list-environment", action="store_const", const="list_environment", dest="action",
-        help="list the environment")
-parser.add_option("-e", "--edit", action="store_const", const="edit", dest="action",
-        help="edit the  crontab")
-parser.add_option("-E", "--edit-environment", action="store_const", const="edit_environment", dest="action",
-        help="edit the environment")
-parser.add_option("-i", "--import", action="store_const", const="import", dest="action",
-        help="import the crontab from stdin")
-parser.add_option("-I", "--import-environment", action="store_const", const="import_environment", dest="action",
-        help="import the environment from stdin")
-parser.add_option("-x", "--execute", action="store_const", const="execute", dest="action",
-        help="execute a job from the crontab in the current shell")
-parser.add_option("-d", "--directory", metavar="NAME", default="~/.pcron",
-        help="the name of the configuration directory, default is %default")
-parser.add_option("--editor", metavar="PATH", default=os.environ.get("EDITOR", "undefined"),
-        help="PATH to text editor, default is %default")
-parser.add_option("--no-backup", action="store_true", default=False,
-        help="do not make backups")
-opts, args = parser.parse_args()
+def main():
+    parser = argparse.ArgumentParser(usage="%(prog)s [-l|-e] [<options>]")
+    parser.add_argument("--version", action="version",
+                        version="%%(prog)s %s - %s" % (__version__, __copyright__))
+    parser.add_argument("-l", "--list", action="store_const", const="list", dest="action",
+                        help="list the crontab")
+    parser.add_argument("-L", "--list-environment", action="store_const", const="list_environment",
+                        dest="action", help="list the environment")
+    parser.add_argument("-e", "--edit", action="store_const", const="edit", dest="action",
+                        help="edit the  crontab")
+    parser.add_argument("-E", "--edit-environment", action="store_const", const="edit_environment",
+                        dest="action", help="edit the environment")
+    parser.add_argument("-i", "--import", action="store_const", const="import", dest="action",
+                        help="import the crontab from stdin")
+    parser.add_argument("-I", "--import-environment", action="store_const",
+                        const="import_environment", dest="action",
+                        help="import the environment from stdin")
+    parser.add_argument("-x", "--execute", action="store", default=None,
+                        help="execute a job from the crontab in the current shell")
+    parser.add_argument("-d", "--directory", metavar="NAME", default="~/.pcron",
+                        help="the name of the configuration directory, default is %(default)s")
+    parser.add_argument("--editor", metavar="PATH", default=os.environ.get("EDITOR", "undefined"),
+                        help="PATH to text editor, default is %(default)s")
+    parser.add_argument("--no-backup", action="store_true", default=False,
+                        help="do not make backups")
+    args = parser.parse_args()
 
-opts.directory = os.path.expanduser(opts.directory)
+    args.directory = os.path.expanduser(args.directory)
 
-if opts.action is None:
-    parser.error("please specify an action")
+    if args.action is None and args.execute is None:
+        parser.error("please specify an action")
 
-if os.environ.get("HOME") is None:
-    parser.error("$HOME is undefined, please set it")
+    if args.action == "edit" and args.editor == "undefined":
+        parser.error("$EDITOR is undefined, please supply the --editor option")
 
-if opts.action == "edit" and opts.editor == "undefined":
-    parser.error("$EDITOR is undefined, please supply the --editor option")
+    if not os.path.exists(args.directory):
+        os.makedirs(args.directory)
 
-if not os.path.exists(opts.directory):
-    os.makedirs(opts.directory)
+    if args.execute is not None:
+        execute(args)
 
-if opts.action == "execute":
-    if len(args) != 1:
-        parser.error("one <jobspec> argument expected")
-    execute(opts.directory, args[0])
+    else:
+        if args.action.startswith("list"):
+            func = list_file
+        else:
+            func = edit_file
 
-if opts.action.startswith("list"):
-    func = list_file
-else:
-    func = edit_file
+        if args.action.endswith("_environment"):
+            name = ENVIRONMENT_NAME
+        else:
+            name = CRONTAB_NAME
 
-if opts.action.endswith("_environment"):
-    name = ENVIRONMENT_NAME
-else:
-    name = CRONTAB_NAME
+        func(args, name)
 
-func(opts.directory, name)
 
+if __name__ == "__main__":
+    main()
