@@ -85,6 +85,33 @@ of the job is already waiting to start.
 """
 
 
+class Jobs:
+
+    def __init__(self):
+        self.jobs = {}
+
+    def __contains__(self, job_id):
+        return job_id in self.jobs
+
+    def __getitem__(self, job_id):
+        return self.jobs[job_id]
+
+    def __setitem__(self, job_id, job):
+        self.jobs[job_id] = job
+
+    def __iter__(self):
+        yield from self.jobs.values()
+
+    def remove(self, job_id):
+        del self.jobs[job_id]
+
+    def sorted(self, key):
+        return sorted((job for job in self if job.active), key=key)
+
+    def inactive(self):
+        yield from (job for job in self if not job.active)
+
+
 class Job:
 
     last_run = datetime.datetime.min

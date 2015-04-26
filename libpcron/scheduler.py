@@ -33,7 +33,7 @@ from .shared import RUNNING, WAITING, SLEEPING
 from .time import format_time
 from .parser import CrontabParser, CrontabError, extract_loglevel_from_crontab
 from .event import Bus
-from .job import Job
+from .job import Jobs, Job
 
 
 class Scheduler:
@@ -48,7 +48,7 @@ class Scheduler:
         self.state_path = os.path.join(self.directory, "state.db")
 
         self.bus = Bus()
-        self.jobs = {}
+        self.jobs = Jobs()
         self.running = True
 
         self.init_logging()
@@ -91,8 +91,8 @@ class Scheduler:
     def save_state(self):
         try:
             state = {}
-            for job_id, job in self.jobs.items():
-                state[job_id] = job.next_run
+            for job in self.jobs:
+                state[job.id] = job.next_run
             with AtomicFile(self.state_path) as fileobj:
                 pickle.dump(state, fileobj)
         except OSError as exc:
@@ -136,28 +136,26 @@ class Scheduler:
         self.bus.register(job_id, task)
 
     def remove_job(self, job_id):
-        self.jobs.pop(job_id)
+        self.jobs.remove(job_id)
         self.bus.post("quit", job=job_id)
 
     def update_jobs(self, init_code, crontab):
         # Evaluate individual job definitions.
         for job_id, info in crontab.items():
-            job = self.jobs.get(job_id)
-
-            if job is None:
+            if job_id not in self.jobs:
                 # Create a new job.
                 self.log.info("create job %s", job_id)
                 self.add_job(job_id, info, init_code)
             else:
                 # Update an existing job.
                 self.log.debug("update job %s", job_id)
-                job.update(info)
+                self.jobs[job_id].update(info)
 
         # Remove old jobs.
-        for job_id in list(self.jobs.keys()):
-            if job_id not in crontab:
-                self.log.info("remove job %s", job_id)
-                self.remove_job(job_id)
+        for job in list(self.jobs):
+            if job.id not in crontab:
+                self.log.info("remove job %s", job.id)
+                self.remove_job(job.id)
 
     #
     # === Signals
@@ -195,25 +193,19 @@ class Scheduler:
         self.bus.post("child")
 
     def dump(self):
-        # FIXME improve
-        for job in sorted(self.jobs.values(), key=lambda j: j.last_run):
-            if not job.active or job.state != RUNNING:
-                continue
-            self.log.info("[running]   %s  %s", format_time(job.last_run), job.id)
+        for job in self.jobs.sorted(lambda j: j.last_run):
+            if job.state == RUNNING:
+                self.log.info("[running]   %s  %s", format_time(job.last_run), job.id)
 
-        for job in sorted(self.jobs.values(), key=lambda j: j.scheduled_run):
-            if not job.active or job.state != WAITING:
-                continue
-            self.log.info("[waiting]   %s  %s", format_time(job.scheduled_run), job.id)
+        for job in self.jobs.sorted(lambda j: j.scheduled_run):
+            if job.state == WAITING:
+                self.log.info("[waiting]   %s  %s", format_time(job.scheduled_run), job.id)
 
-        for job in sorted(self.jobs.values(), key=lambda j: j.next_run):
-            if not job.active or job.state != SLEEPING:
-                continue
-            self.log.info("[sleeping]  %s  %s", format_time(job.next_run), job.id)
+        for job in self.jobs.sorted(lambda j: j.next_run):
+            if job.state == SLEEPING:
+                self.log.info("[sleeping]  %s  %s", format_time(job.next_run), job.id)
 
-        for job in self.jobs.values():
-            if job.active:
-                continue
+        for job in self.jobs.inactive():
             self.log.info("[inactive]  %s  %s", format_time(datetime.datetime.max), job.id)
 
     #
@@ -224,7 +216,7 @@ class Scheduler:
            next.
         """
         jobs = {}
-        for job in self.jobs.values():
+        for job in self.jobs:
             if not job.active or (job.state == WAITING and job.next_run < datetime.datetime.now()):
                 continue
             timestamp = job.next_run.timestamp()

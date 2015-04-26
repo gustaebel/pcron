@@ -44,15 +44,16 @@ class CrontabEmptyError(CrontabError):
 
 
 def sleep(seconds=None):
-    """Go to sleep for a certain amount of seconds. If the sleep() call is
-       interrupted by a signal a RuntimeError is raised.
+    """Go to sleep (for a certain amount of seconds). If sleeping is
+       interrupted by a signal an Interrupt exception is raised.
     """
     if seconds is None:
+        # Sleep until a signal occurs.
         signal.pause()
     else:
-        start_time = time.time()
+        stop_time = time.time() + seconds
         time.sleep(seconds)
-        if time.time() - start_time < seconds:
+        if time.time() < stop_time:
             raise Interrupt
 
 

@@ -43,6 +43,7 @@ set +ea
 
 
 class Runner:
+    # TODO make this a context manager.
 
     def __init__(self, command, environ, init_code):
         self.command = command
