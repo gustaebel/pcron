@@ -54,7 +54,7 @@ class Scheduler:
         self.state_path = os.path.join(self.directory, "state.db")
 
         if self.logfile is None:
-            self.logfile = open(os.path.join(self.directory, "logfile.txt"), "w")
+            self.logfile = open(os.path.join(self.directory, "logfile.txt"), "a")
 
         self.logger = Logger(self.time_provider, self.logfile,
                              extract_loglevel_from_crontab(self.crontab_path))
