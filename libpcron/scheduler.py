@@ -272,6 +272,8 @@ class Scheduler:
                         if j.interval is not None:
                             j.interval.reset_timestamp_generator(j.time_provider.next_minute())
 
+        self.save_state()
+
     def process_waiting_jobs(self):
         """Go through the queues and start a waiting job for each queue that
            has currently no running job.
@@ -306,10 +308,7 @@ class Scheduler:
         self.log.debug("shutting down ...")
         for job in self.running.values():
             job.terminate()
-            job.finalize()
-            self.mailer.send_job_mail(job)
-            job.close()
-        self.save_state()
+        self.process_finished_jobs()
         self.log.debug("shutting down done")
 
     def start_job(self, job):
