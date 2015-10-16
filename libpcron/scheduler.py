@@ -257,6 +257,7 @@ class Scheduler:
         """Go through the list of running jobs and look for jobs that have
            finished.
         """
+        state_changed = False
         for job in list(self.running.values()):
             if job.has_finished():
                 self.running.pop(job.group)
@@ -272,7 +273,10 @@ class Scheduler:
                         if j.interval is not None:
                             j.interval.reset_timestamp_generator(j.time_provider.next_minute())
 
-        self.save_state()
+                state_changed = True
+
+        if state_changed:
+            self.save_state()
 
     def process_waiting_jobs(self):
         """Go through the queues and start a waiting job for each queue that
