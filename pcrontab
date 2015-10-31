@@ -22,6 +22,7 @@
 
 import sys
 import os
+import locale
 import argparse
 import hashlib
 import tempfile
@@ -141,7 +142,7 @@ def execute(args):
     except EnvironmentError:
         init_code = ""
 
-    environ = Job.create_environ(args.directory, name, name + "-0", job.group)
+    environ = Job.create_environ(".".join(locale.getlocale()), args.directory, name, name + "-0", job.group)
 
     with tempfile.NamedTemporaryFile(prefix="tmp.pcron-cmd.", mode="w") as script:
         script.write(SHELL_CODE % (init_code, job.command))

@@ -25,6 +25,7 @@ import unittest
 import collections
 import threading
 import signal
+import locale
 
 from libpcron import SUPPORTED_SHELLS
 from libpcron.job import Job
@@ -44,7 +45,7 @@ class TestJob(Job):
 
     @staticmethod
     def create_environ(directory, name, id, group):
-        environ = Job.create_environ(directory, name, id, group)
+        environ = Job.create_environ(".".join(locale.getlocale()), directory, name, id, group)
         environ["SHELL"] = "/bin/non_existing_shell"
         return environ
 
