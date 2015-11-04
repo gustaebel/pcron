@@ -35,7 +35,6 @@ import collections
 
 from libpcron.time import TimeSpec, TimeSpecError, IntervalSpec, \
         IntervalSpecError, format_time
-from libpcron.shared import Interrupt
 from libpcron.scheduler import Scheduler
 from libpcron.time import TimeProvider
 from libpcron.parser import CrontabParser, CrontabError
@@ -94,14 +93,14 @@ class TestTimeProvider(TimeProvider):
         # Check if the end of time has come, and give the pcron process the
         # command to shut down.
         if wakeup > self._stop:
-            os.kill(os.getpid(), signal.SIGTERM)
+            return signal.SIGTERM
 
         # Advance to the new point in time.
         self._now = wakeup
 
         # Simulate the SIGCHLD interrupt if necessary.
         if raise_child_signal:
-            os.kill(os.getpid(), signal.SIGCHLD)
+            return signal.SIGCHLD
 
 
 class TestRunner:
@@ -209,6 +208,9 @@ class TestScheduler(Scheduler):
     def __init__(self, time_provider, directory, logfile=None, persistent_state=True):
         super().__init__(time_provider, directory, logfile, persistent_state)
         self.counter = collections.Counter()
+
+    def init_signal_handling(self):
+        pass
 
     def load_init_code(self):
         try:

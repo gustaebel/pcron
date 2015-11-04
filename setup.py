@@ -25,8 +25,8 @@ import sys
 import os
 import re
 
-if sys.version_info[:2] < (3, 2):
-    raise SystemExit("Python >=3.2 required")
+if sys.version_info[:2] < (3, 3):
+    raise SystemExit("Python >=3.3 required")
 
 from distutils.core import setup
 

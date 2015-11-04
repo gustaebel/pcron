@@ -27,7 +27,7 @@ import itertools
 import collections
 
 from . import ENVIRONMENT_NAME, CRONTAB_NAME
-from .shared import AtomicFile, Interrupt, Logger
+from .shared import AtomicFile, Logger, SIGNALS
 from .time import format_time
 from .parser import CrontabParser, CrontabError, extract_loglevel_from_crontab
 from .job import Job
@@ -68,8 +68,7 @@ class Scheduler:
         self.queues = {}
         self.serial = collections.Counter()
 
-        self.signals = []
-        self.init_signal_handler()
+        self.init_signal_handling()
 
         self.load()
         self.load_state()
@@ -157,18 +156,17 @@ class Scheduler:
     #
     # === Signals
     #
-    def init_signal_handler(self):
-        signal.signal(signal.SIGINT, self._signal_handler)
-        signal.signal(signal.SIGTERM, self._signal_handler)
-        signal.signal(signal.SIGHUP, self._signal_handler)
-        signal.signal(signal.SIGUSR1, self._signal_handler)
-        signal.signal(signal.SIGUSR2, signal.SIG_IGN)
-        signal.signal(signal.SIGCHLD, self._signal_handler)
-
-    def _signal_handler(self, signum, frame):
-        # pylint:disable=unused-argument
-        # Feed the received signal into our event bus.
-        self.signals.append(signum)
+    def init_signal_handling(self):
+        # In Python 3.5 system calls are no longer interrupted by signals.
+        # Thus, we can no longer use time.sleep() or otherwise the processing
+        # of signals would be delayed until the sleep has finished.
+        # So, we now use signal.sigtimedwait() instead. Due to the lack of
+        # documentation (and my unwillingness to spend more time on this than
+        # necessary) I'm not quite sure, if I'm doing this completely right.
+        # In the following, we set all signals that we're interested in as
+        # blocked, so that they queue up. In TimeProvider.sleep() they're taken
+        # again from the queue by signal.sigtimedwait().
+        signal.pthread_sigmask(signal.SIG_BLOCK, SIGNALS)
 
     def dump(self):
         jobs = set()
@@ -201,45 +199,48 @@ class Scheduler:
                 self.enqueue_job(job("reboot"))
 
         self.log.debug("loop enter")
-        while not self.process_signals():
+
+        signum = None
+        while not self.process_signal(signum):
             self.log.debug("loop iterate")
             self.process_pending_jobs()
             self.process_finished_jobs()
             self.process_waiting_jobs()
-            self.wait()
+            signum = self.wait()
+
         self.log.debug("loop exit")
 
         self.shutdown()
 
-    def process_signals(self):
-        """Process signals that have accumulated, return True if a termination
-           signal has been received.
+    def process_signal(self, signum):
+        """Process the last signal, return True if a termination signal has
+           been received.
         """
-        while self.signals:
-            signum = self.signals.pop(0)
+        # First process events that are directed at the Scheduler.
+        if signum == signal.SIGINT:
+            self.log.warn("received SIGINT signal, interrupting")
+            return True
 
-            # First process events that are directed at the Scheduler.
-            if signum == signal.SIGINT:
-                self.log.warn("received SIGINT signal, interrupting")
-                return True
+        elif signum == signal.SIGTERM:
+            self.log.warn("received SIGTERM signal, terminating")
+            return True
 
-            elif signum == signal.SIGTERM:
-                self.log.warn("received SIGTERM signal, terminating")
-                return True
+        elif signum == signal.SIGUSR1:
+            self.log.debug("received SIGUSR1 signal, dumping state")
+            self.dump()
 
-            elif signum == signal.SIGUSR1:
-                self.log.debug("received SIGUSR1 signal, dumping state")
-                self.dump()
+        elif signum == signal.SIGHUP:
+            self.log.debug("received SIGHUP signal, reloading crontab")
+            self.load()
 
-            elif signum == signal.SIGHUP:
-                self.log.debug("received SIGHUP signal, reloading crontab")
-                self.load()
+        elif signum == signal.SIGCHLD:
+            self.log.debug("received SIGCHLD signal")
 
-            elif signum == signal.SIGCHLD:
-                self.log.debug("received SIGCHLD signal")
+        elif signum is None:
+            pass
 
-            else:
-                self.log.warn("got unsupported signal %d" % signum)
+        else:
+            self.log.warn("got unsupported signal %d" % signum)
 
         return False
 
@@ -306,7 +307,7 @@ class Scheduler:
         if seconds > 0:
             # FIXME
             self.log.debug("sleep until %s", (self.time_provider.now() + sleep).strftime("%H:%M"))
-            self.time_provider.sleep(seconds)
+            return self.time_provider.sleep(seconds)
 
     def shutdown(self):
         self.log.debug("shutting down ...")

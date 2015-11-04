@@ -24,7 +24,9 @@ import time
 import signal
 import datetime
 
-from .shared import ParserError, Interrupt
+from queue import Empty
+
+from .shared import ParserError, SIGNALS
 
 
 class TimeSpecError(ParserError):
@@ -358,11 +360,9 @@ class TimeProvider:
         return datetime.datetime.now().replace(second=0, microsecond=0) + self.timedelta(seconds=60)
 
     def sleep(self, seconds):
-        """Sleep for a certain amount of seconds. If sleeping is interrupted by
-           a signal an Interrupt exception is raised.
+        """Sleep for a certain amount of seconds.
         """
-        # FIXME what about race conditions?
-        stop_time = time.time() + seconds
-        time.sleep(seconds)
-
+        ret = signal.sigtimedwait(SIGNALS, seconds)
+        if ret is not None:
+            return ret.si_signo
 

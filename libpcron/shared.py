@@ -23,15 +23,13 @@ import sys
 import os
 import tempfile
 import traceback
+import signal
 
+
+SIGNALS = {signal.SIGINT, signal.SIGTERM, signal.SIGHUP, signal.SIGUSR1, signal.SIGCHLD}
 
 EXC_PREFIX = ">>> "
 
-
-class Interrupt(Exception):
-
-    def __init__(self, signum):
-        self.signum = signum
 
 class ParserError(Exception):
     pass

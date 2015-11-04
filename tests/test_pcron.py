@@ -35,7 +35,6 @@ import collections
 
 from libpcron.time import TimeSpec, TimeSpecError, IntervalSpec, \
         IntervalSpecError, format_time
-from libpcron.shared import Interrupt
 from libpcron.scheduler import Scheduler
 from libpcron.parser import CrontabParser, CrontabError
 from libpcron.job import Job
