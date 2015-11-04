@@ -73,21 +73,27 @@ class DaemonContext:
         self.path = path
         self.daemonize = daemonize
 
+        self.fileobj = open(self.path, "a")
+        self.fd = self.fileobj.fileno()
+
         try:
-            with open(self.path, "r") as fileobj:
-                pid = int(fileobj.read().strip())
-        except (FileNotFoundError, ValueError):
-            pass
-        except OSError as exc:
-            raise SystemExit(str(exc))
-        else:
+            os.lockf(self.fd, os.F_TLOCK, 0)
+        except (PermissionError, BlockingIOError):
             try:
-                os.kill(pid, 0)
-            except OSError:
-                pass
-            else:
-                raise SystemExit("%s seems to be running on pid %s" % \
-                        (os.path.basename(sys.argv[0]), pid))
+                with open(self.path, "r") as lines:
+                    for line in lines:
+                        pid = int(line)
+            except (FileNotFoundError, ValueError):
+                raise SystemExit("%s seems to be running (unable to get pid)" % \
+                        os.path.basename(sys.argv[0]))
+            except OSError as exc:
+                raise SystemExit(str(exc))
+
+            raise SystemExit("%s is already running as pid %s" % \
+                    (os.path.basename(sys.argv[0]), pid))
+        else:
+            print(os.getpid(), file=self.fileobj)
+            self.fileobj.flush()
 
         if self.daemonize:
             try:
@@ -107,14 +113,17 @@ class DaemonContext:
             os.dup2(fd, 2)
 
     def __enter__(self):
-        try:
-            with open(self.path, "w") as fileobj:
-                print(os.getpid(), file=fileobj)
-        except OSError as exc:
-            raise SystemExit(str(exc))
         return self
 
     def __exit__(self, *exc):
+        try:
+            os.lockf(self.fd, os.F_ULOCK, 0)
+        except OSError:
+            pass
+        try:
+            self.fileobj.close()
+        except OSError:
+            pass
         try:
             os.remove(self.path)
         except OSError:
