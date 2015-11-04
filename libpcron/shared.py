@@ -89,9 +89,6 @@ class DaemonContext:
 
             raise SystemExit("%s is already running as pid %s" % \
                     (os.path.basename(sys.argv[0]), pid))
-        else:
-            print(os.getpid(), file=self.fileobj)
-            self.fileobj.flush()
 
         if self.daemonize:
             try:
@@ -109,6 +106,9 @@ class DaemonContext:
             os.dup2(fd, 0)
             os.dup2(fd, 1)
             os.dup2(fd, 2)
+
+            print(os.getpid(), file=self.fileobj)
+            self.fileobj.flush()
 
     def __enter__(self):
         return self
