@@ -113,6 +113,8 @@ class Scheduler:
             return self._load_crontab()
         except OSError as exc:
             self.log.error("%s: %s", self.directory, exc)
+        except UnicodeError as exc:
+            self.log.error("%s: unable to decode crontab", self.directory)
         except CrontabError as exc:
             self.log.error("%s: %s", self.directory, exc)
             self.log.error("%s: cannot use crontab because it contains errors", self.directory)
