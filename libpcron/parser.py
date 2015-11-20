@@ -57,7 +57,7 @@ class CrontabParser:
     def parse(self):
         try:
             with open(self.path) as fobj:
-                self.parser.readfile(fobj)
+                self.parser.read_file(fobj)
         except configparser.DuplicateSectionError as exc:
             raise CrontabError("duplicate job %s" % exc.section)
         except configparser.DuplicateOptionError as exc:
