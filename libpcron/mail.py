@@ -24,6 +24,7 @@ import os
 import signal
 import subprocess
 import email
+import locale
 
 from .time import format_time
 from .shared import EXC_PREFIX
@@ -105,6 +106,7 @@ class Mailer:
 
     def __init__(self, logger):
         self.log = logger.new("mail")
+        self.encoding = locale.getpreferredencoding()
 
     def send_job_mail(self, job):
         # Test if the process exited with an error condition and decide whether
@@ -168,13 +170,11 @@ class Mailer:
             "exitcode": job.runner.returncode if job.runner is not None else -1,
             "signal":   SIGNAL_NAMES[abs(job.runner.returncode)] if job.runner and job.runner.returncode < 0 else "NONE",
             "pid":      job.runner.get_pid() if job.runner is not None else -1,
-            "encoding": job.locale.split(".", 1)[1]
+            "encoding": self.encoding
         }
 
-        self.send(job.sendmail, job.mailto, job.working_dir, job.environ, text, job.runner.output if job.runner is not None else None)
-
-        #if job.runner is not None:
-        #    job.runner.output.close()
+        self.send(job.sendmail, job.mailto, job.working_dir, job.environ, text,
+                job.runner.output if job.runner is not None else None)
 
     def send(self, sendmail, mailto, directory, environ, text, output=None):
         self.log.debug("send mail to %s", mailto)
@@ -195,7 +195,7 @@ class Mailer:
                 log_error = True
             else:
                 # Write boilerplate.
-                process.stdin.write(text.encode("utf8"))
+                process.stdin.write(text.encode(self.encoding))
 
                 # Write job logfile.
                 while process.poll() is None:

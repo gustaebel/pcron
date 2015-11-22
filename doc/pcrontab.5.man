@@ -87,10 +87,6 @@ conflict: skip|mail|kill
 
   In any case, a warning for each conflict is written to the logfile.
 
-locale: <language.codeset>  
-  Define the language and codeset for the shell command. `codeset' is used as
-  the character encoding for sending mail. The default is `en_US.UTF-8'.
-
 mail: never|always|error|output  
   When to send the output of the job via mail, either `never', `always', if
   an `error' occurred or if the job actually produced `output'.

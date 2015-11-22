@@ -102,6 +102,8 @@ class Scheduler:
             self.log.debug("%s/%s not found", self.directory, ENVIRONMENT_NAME)
         except OSError as exc:
             self.log.error(str(exc))
+        except UnicodeError as exc:
+            self.log.error("%s: unable to decode environment file", self.directory)
         return ""
 
     def _load_crontab(self):
@@ -114,7 +116,7 @@ class Scheduler:
         except OSError as exc:
             self.log.error("%s: %s", self.directory, exc)
         except UnicodeError as exc:
-            self.log.error("%s: unable to decode crontab", self.directory)
+            self.log.error("%s: unable to decode crontab file", self.directory)
         except CrontabError as exc:
             self.log.error("%s: %s", self.directory, exc)
             self.log.error("%s: cannot use crontab because it contains errors", self.directory)

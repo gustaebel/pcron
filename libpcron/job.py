@@ -26,7 +26,7 @@ import collections
 
 from .time import format_time
 from .run import Runner, RunnerError
-from .shared import CrontabError
+from .shared import CrontabError, create_environ
 from .field import String, Boolean, Time, Interval, ListOfStrings
 
 
@@ -38,7 +38,6 @@ class Job:
     Runner = Runner
 
     _name_regex = r"^\w+(-\w+|\.\w+)*$"
-    _locale_regex = r"^[a-zA-Z]{2}_[a-zA-Z]{2}\.\w+$"
 
     fields = collections.OrderedDict([
         ("name",        String(regex=_name_regex)),
@@ -53,7 +52,6 @@ class Job:
         ("interval",    Interval(default=None, schedule=True)),
         ("post",        ListOfStrings(default=[], schedule=True)),
 
-        ("locale",      String(default="en_US.UTF-8", regex=_locale_regex)),
         ("mail",        String(default="error", choices=("never", "always", "error", "output"))),
         ("mailto",      String(default=pwd.getpwuid(os.getuid()).pw_name)),
         ("sendmail",    String(default="/usr/lib/sendmail"))
@@ -99,35 +97,17 @@ class Job:
         self.this_run = self.time_provider.now()
         self.runner = None
 
-        self.environ = self.create_environ(self.locale, self.directory, self.name,
+        self.environ = self.create_environ(self.directory, self.name,
                                            self.id, self.group)
 
         self.working_dir = os.path.join(self.directory, "jobs", self.name)
         self.username = self.environ["USER"]
 
     @staticmethod
-    def create_environ(locale, directory, name, id, group):
+    def create_environ(directory, name, id, group):
         # Prepare a basic environment for the job.
         record = pwd.getpwuid(os.getuid())
-
-        if not os.access(record.pw_shell, os.X_OK):
-            raise CrontabError("shell %s is inaccessible" % record.pw_shell)
-
-        return {
-            "USER":     record.pw_name,
-            "LOGNAME":  record.pw_name,
-            "UID":      str(record.pw_uid),
-            "GID":      str(record.pw_gid),
-            "HOME":     record.pw_dir,
-            "SHELL":    record.pw_shell,
-            "PATH":     "/usr/local/bin:/usr/bin:/bin" if record.pw_uid > 0 else \
-                        "/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin",
-            "LANG":     locale,
-            "PCRONDIR": directory,
-            "JOB_NAME": name,
-            "JOB_ID":   id,
-            "JOB_GROUP": group
-        }
+        return create_environ(record, PCRONDIR=directory, JOB_NAME=name, JOB_ID=id, JOB_GROUP=group)
 
     def __str__(self):
         return self.id

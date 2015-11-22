@@ -196,3 +196,21 @@ class Logger(NullLogger):
             )
             print("%s  %-7s  %-12s  %s" % record, file=self.file, flush=True)
 
+
+def create_environ(record, **kwargs):
+    if not os.access(record.pw_shell, os.X_OK):
+        raise CrontabError("shell %s is inaccessible" % record.pw_shell)
+
+    env = {
+        "USER":     record.pw_name,
+        "LOGNAME":  record.pw_name,
+        "UID":      str(record.pw_uid),
+        "GID":      str(record.pw_gid),
+        "HOME":     record.pw_dir,
+        "SHELL":    record.pw_shell,
+        "PATH":     "/usr/local/bin:/usr/bin:/bin" if record.pw_uid > 0 else \
+                    "/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin",
+    }
+    env.update(kwargs)
+    return env
+
