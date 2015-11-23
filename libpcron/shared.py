@@ -210,6 +210,7 @@ def create_environ(record, **kwargs):
         "SHELL":    record.pw_shell,
         "PATH":     "/usr/local/bin:/usr/bin:/bin" if record.pw_uid > 0 else \
                     "/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin",
+        "LANG":     os.environ["LANG"]
     }
     env.update(kwargs)
     return env

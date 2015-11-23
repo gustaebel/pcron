@@ -27,7 +27,6 @@ import grp
 import argparse
 import subprocess
 import signal
-import locale
 
 from libpcron import __version__, __copyright__, CRONTAB_NAME, PID_NAME
 from libpcron.shared import DaemonContext, Logger, create_environ
@@ -51,7 +50,7 @@ class Controller:
         self.check_interval = check_interval
 
         self.logfile = open(self.log_path, "a")
-        self.logger = Logger(TimeProvider(), self.logfile, Logger.WARN)
+        self.logger = Logger(TimeProvider(), self.logfile, Logger.DEBUG)
         self.log = self.logger.new("main")
         self.log.info("start pcrond with pid %d", os.getpid())
 
@@ -65,15 +64,18 @@ class Controller:
             if user not in self.running:
                 continue
 
-            path = os.path.join(record.pw_dir, ".pcron", PID_NAME)
-
-            try:
-                with open(path, "r") as fileobj:
-                    pid = int(fileobj.read().strip())
-            except (OSError, ValueError):
-                pass
-            else:
+            pid = self.get_pid(record)
+            if pid is not None:
                 os.kill(pid, signal.SIGTERM)
+
+    def get_pid(self, record):
+        path = os.path.join(record.pw_dir, ".pcron", PID_NAME)
+
+        try:
+            with open(path, "r") as fileobj:
+                return int(fileobj.read().strip())
+        except (OSError, ValueError):
+            return None
 
     def get_all_users(self):
         # pylint:disable=no-self-use
@@ -123,6 +125,7 @@ class Controller:
                 env=create_environ(record, LANG=self.locale),
                 stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
             self.running.add(user)
+            self.log.info("started pcron instance for user %s with pid %s", user, self.get_pid(record))
 
 
 def main():
@@ -143,11 +146,6 @@ def main():
     parser.add_argument("--locale", metavar="NAME", default="en_US.UTF-8",
                         help="the global locale, default is %(default)s")
     args = parser.parse_args()
-
-    try:
-        locale.setlocale(locale.LC_ALL, args.locale)
-    except locale.Error as exc:
-        parser.error("unable to set locale %s: %s" % (args.locale, exc))
 
     with DaemonContext(args.pid_path):
         signal.signal(signal.SIGINT, signal_handler)
