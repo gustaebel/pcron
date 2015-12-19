@@ -84,6 +84,7 @@ class Job:
         if not has_schedule:
             raise CrontabError("missing scheduling information")
 
+        job.last_run = None
         return job
 
     def __init__(self, trigger):
@@ -95,6 +96,7 @@ class Job:
 
         # FIXME rename this_run?
         self.this_run = self.time_provider.now()
+        self.__class__.last_run = self.this_run
         self.runner = None
 
         self.environ = self.create_environ(self.directory, self.name,
@@ -126,17 +128,22 @@ class Job:
         cls.directory = directory
 
         if cls.time != "@reboot":
-            cls._timestamp_generator = cls.timestamp_generator()
+            if cls.last_run is None:
+                now = cls.time_provider.next_minute()
+            else:
+                now = cls.last_run
+            cls._timestamp_generator = cls.timestamp_generator(now)
             cls.advance()
 
     @classmethod
     def advance(cls):
         cls.next_trigger, cls.next_run = next(cls._timestamp_generator)
+        log = cls.logger.new(cls.name)
+        log.debug("advance: %s %s", cls.next_trigger, format_time(cls.next_run))
 
     @classmethod
-    def timestamp_generator(cls):
+    def timestamp_generator(cls, now):
         infinity = cls.time_provider.infinity
-        now = cls.time_provider.next_minute()
 
         if cls.time is not None:
             time_generator = cls.time.timestamp_generator(now)

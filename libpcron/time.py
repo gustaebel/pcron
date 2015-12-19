@@ -175,14 +175,14 @@ class TimeSpec:
         # NOTE This is used in the unittests only.
         return dt == next(self.timestamp_generator(dt))
 
-    def iter_days(self, year, month, day):
+    def iter_days(self, year, month):
         """Generate a list of the days of a particular month (starting at day).
 
         The days have to be recalculated for every month, because weekdays
         must be taken into account. If both "day of month" and "day of week" are
         not `*` placeholders, they both add up instead of restricting each other.
         """
-        for day in range(day, 32):
+        for day in range(1, 32):
             try:
                 date = datetime.date(year, month, day)
             except ValueError:
@@ -200,30 +200,20 @@ class TimeSpec:
         """
         year = now.year
         months = [m for m in self.months if m >= now.month]
-        day = now.day if (months and months[0] == now.month) else 1
-        hours = [h for h in self.hours if h >= now.hour]
-        minutes = [m for m in self.minutes if m >= now.minute]
 
-        # FIXME this looks horrible and has to be fixed.
         while True:
             for month in months:
-                for day in self.iter_days(year, month, day):
-                    for hour in hours:
-                        for minute in minutes:
+                for day in self.iter_days(year, month):
+                    for hour in self.hours:
+                        for minute in self.minutes:
                             try:
-                                yield datetime.datetime(year=year, month=month, day=day,
-                                                        hour=hour, minute=minute)
+                                date = datetime.datetime(year=year, month=month,
+                                        day=day, hour=hour, minute=minute)
                             except ValueError:
                                 continue
-                        minutes = self.minutes
-                    minutes = self.minutes
-                    hours = self.hours
-                day = 1
-                minutes = self.minutes
-                hours = self.hours
-            day = 1
-            minutes = self.minutes
-            hours = self.hours
+                            else:
+                                if date >= now:
+                                    yield date
             months = self.months
             year += 1
 

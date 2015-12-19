@@ -135,6 +135,7 @@ class Scheduler:
                     if state.get("tag") == self.STATE_TAG:
                         for name, next_run in state["jobs"].items():
                             try:
+                                self.log.debug("restore %s %s", name, format_time(next_run))
                                 self.crontab[name].next_run = next_run
                             except KeyError:
                                 continue
@@ -318,6 +319,7 @@ class Scheduler:
         for job in self.running.values():
             job.terminate()
         self.process_finished_jobs()
+        self.save_state()
         self.log.debug("shutting down done")
 
     def start_job(self, job):

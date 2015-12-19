@@ -398,6 +398,40 @@ class MailTest(_SchedulerTest):
         self.mail.setdefault(m["pcron-status"], collections.Counter())[job_name] += 1
 
 
+class PersistenceTest(_SchedulerTest):
+
+    TimeProvider = TestTimeProvider
+
+    def _test(self, directory, **kwargs):
+        self.time_provider = self.TimeProvider(**kwargs)
+
+        with open(os.path.join(data_directory, directory, "logfile.txt"), "a") as self.logfile:
+            with self.Scheduler(self.time_provider,
+                               os.path.abspath(os.path.join(data_directory, directory)),
+                               self.logfile, persistent_state=True) as self.scheduler:
+                self.scheduler.mainloop()
+
+    def test_persistence(self):
+        for name in ("state.db", "logfile.txt"):
+            try:
+                os.remove(os.path.join(data_directory, "test_persistence", name))
+            except FileNotFoundError:
+                pass
+
+        # Job runs on 0:00 on 5,12,19 etc.
+        start1 = datetime.datetime(1970, 1, 4, 11, 59, 59)
+        start2 = datetime.datetime(1970, 1, 11, 11, 59, 59)
+        start3 = datetime.datetime(1970, 1, 18, 11, 59, 59)
+        start4 = datetime.datetime(1970, 1, 18, 11, 59, 59) + td(days=28)
+
+        self._test("test_persistence", start=start1, stop=start2)
+        self.assertEqual(self.counter["foo"], 1)
+        self._test("test_persistence", start=start2, stop=start3)
+        self.assertEqual(self.counter["foo"], 1)
+        self._test("test_persistence", start=start3, stop=start4)
+        self.assertEqual(self.counter["foo"], 4)
+
+
 if __name__ == "__main__":
     unittest.main()
 
