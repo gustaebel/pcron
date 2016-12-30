@@ -2,7 +2,7 @@
 # -----------------------------------------------------------------------
 #
 # pcron - a periodic cron-like job scheduler.
-# Copyright (C) 2009-2015 Lars Gustäbel <lars@gustaebel.de>
+# Copyright (C) 2009-2016 Lars Gustäbel <lars@gustaebel.de>
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -45,7 +45,7 @@ kwargs = {
     "long_description":
                     "pcron is a periodic job scheduler inspired by fcron",
     "license":      "GPL",
-    "classifiers":  ["Development Status :: 3 - Alpha",
+    "classifiers":  ["Development Status :: 5 - Production/Stable",
                     "Environment :: Console",
                     "Intended Audience :: System Administrators",
                     "License :: OSI Approved :: GNU General Public License (GPL)",
