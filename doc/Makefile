@@ -20,7 +20,7 @@ manpages: $(sources)
 	$(txt2man)
 
 define txt2man =
-txt2man -s $(subst .,,$(suffix $(suffix $@))) -t $(basename $(basename $<)) -r "$(RELEASE)" $< 2>&1 > $@
+txt2man -s $(subst .,,$(suffix $(suffix $@))) -t $(basename $(basename $<)) -r "$(RELEASE)" $< > $@
 endef
 
 clean:
