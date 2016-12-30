@@ -144,17 +144,15 @@ class Mailer:
     def send_conflict_mail(self, new_job, old_job, running): # FIXME
         if new_job.conflict == "kill":
             if running:
-                text = MAIL_KILL_RUNNING
+                self.send_message(MAIL_KILL_RUNNING, old_job)
             else:
-                text = MAIL_SKIP_WAITING
+                self.send_message(MAIL_SKIP_WAITING, new_job)
 
         elif new_job.conflict == "skip":
             if running:
-                text = MAIL_SKIP_RUNNING
+                self.send_message(MAIL_SKIP_RUNNING, new_job)
             else:
-                text = MAIL_SKIP_WAITING
-
-        self.send_message(text, new_job)
+                self.send_message(MAIL_SKIP_WAITING, new_job)
 
     def send_message(self, text, job):
         if job.mail == "never":
@@ -176,7 +174,7 @@ class Mailer:
         self.send(job.sendmail, job.mailto, job.working_dir, job.environ, text,
                 job.runner.output if job.runner is not None else None)
 
-    def send(self, sendmail, mailto, directory, environ, text, output=None):
+    def send(self, sendmail, mailto, directory, environ, text, output):
         self.log.debug("send mail to %s", mailto)
 
         if "{}" in sendmail:
@@ -198,11 +196,12 @@ class Mailer:
                 process.stdin.write(text.encode(self.encoding))
 
                 # Write job logfile.
-                while process.poll() is None:
-                    buf = output.read(512)
-                    if not buf:
-                        break
-                    process.stdin.write(buf)
+                if output is not None:
+                    while process.poll() is None:
+                        buf = output.read(512)
+                        if not buf:
+                            break
+                        process.stdin.write(buf)
 
                 process.stdin.close()
 
