@@ -43,7 +43,7 @@ def extract_loglevel_from_crontab(path):
         try:
             return Logger.levels[value]
         except KeyError:
-            raise CrontabError("invalid conflict value:%r" % value)
+            raise CrontabError("invalid loglevel value:%r" % value)
 
 
 class CrontabParser:
