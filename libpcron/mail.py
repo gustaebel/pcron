@@ -98,7 +98,7 @@ Content-Type: text/plain; charset="%(encoding)s"
 Pcron-Status: CONFLICT KILL
 Subject: pcron: WARNING! %(timestamp)s %(job)s
 
-Running job %(job)s was killed in favor of a new instance.
+Running job %(job)s was killed in favor of the new instance.
 """
 
 
@@ -135,44 +135,36 @@ class Mailer:
             else:
                 text = MAIL_KILLED
 
-            self.send_message(text, job)
+            self.send_message(text, job, job.runner)
 
         else:
             # Tear down the Runner and close the output file object.
             job.runner.close()
 
-    def send_conflict_mail(self, new_job, old_job, running): # FIXME
-        if new_job.conflict == "kill":
-            if running:
-                self.send_message(MAIL_KILL_RUNNING, old_job)
-            else:
-                self.send_message(MAIL_SKIP_WAITING, new_job)
+    def send_conflict_mail(self, new_job, old_job, running):
+        if running:
+            if new_job.conflict == "kill":
+                self.send_message(MAIL_KILL_RUNNING, old_job, old_job.runner)
+            elif new_job.conflict == "skip":
+                self.send_message(MAIL_SKIP_RUNNING, new_job, old_job.runner)
+        else:
+            self.send_message(MAIL_SKIP_WAITING, new_job, old_job.runner if old_job is not None else None)
 
-        elif new_job.conflict == "skip":
-            if running:
-                self.send_message(MAIL_SKIP_RUNNING, new_job)
-            else:
-                self.send_message(MAIL_SKIP_WAITING, new_job)
-
-    def send_message(self, text, job):
-        if job.mail == "never":
-            # FIXME
-            return
-
+    def send_message(self, text, job, runner):
         text %= {
             "job":      str(job.id),
             "mailto":   job.mailto,
             "username": job.username,
             "timestamp": format_time(job.this_run),
             "command":  job.command,
-            "exitcode": job.runner.returncode if job.runner is not None else -1,
-            "signal":   SIGNAL_NAMES[abs(job.runner.returncode)] if job.runner and job.runner.returncode < 0 else "NONE",
-            "pid":      job.runner.get_pid() if job.runner is not None else -1,
+            "exitcode": runner.returncode if runner is not None else -1,
+            "signal":   SIGNAL_NAMES[abs(runner.returncode)] if runner and runner.returncode < 0 else "NONE",
+            "pid":      runner.get_pid() if runner is not None else -1,
             "encoding": self.encoding
         }
 
         self.send(job.sendmail, job.mailto, job.working_dir, job.environ, text,
-                job.runner.output if job.runner is not None else None)
+                runner.output if runner is not None else None)
 
     def send(self, sendmail, mailto, directory, environ, text, output):
         self.log.debug("send mail to %s", mailto)

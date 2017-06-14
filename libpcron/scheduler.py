@@ -362,3 +362,36 @@ class Scheduler:
 
         self.queues[job.group]= queue
 
+    def enqueue_job(self, job):
+        running_job = self.running.get(job.group)
+        queue = self.queues.get(job.group, [])
+        names = set(j.name for j in queue)
+
+        if running_job is not None and running_job.name == job.name:
+            job.log.debug("queue %s blocked by %s", job.group, running_job)
+            running_job.log.warn("scheduling conflict: exceeding runtime -> %s" % job.conflict)
+
+            if job.conflict == "kill":
+                running_job.terminate()
+
+            if job.conflict != "skip":
+                job.enqueue(queue)
+
+            if job.conflict in ("kill", "skip") and job.warn:
+                self.mailer.send_conflict_mail(job, running_job, True)
+
+        elif job.name in names:
+            job.log.debug("queue %s blocked by %s", job.group, list(j for j in queue if j.name == job.name)[0])
+            job.log.warn("scheduling conflict: wait congestion -> skip")
+
+            if job.conflict == "ignore":
+                job.enqueue(queue)
+
+            elif job.warn:
+                self.mailer.send_conflict_mail(job, running_job, False)
+
+        else:
+            job.enqueue(queue)
+
+        self.queues[job.group]= queue
+

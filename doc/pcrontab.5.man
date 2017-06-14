@@ -87,6 +87,10 @@ conflict: skip|mail|kill
 
   In any case, a warning for each conflict is written to the logfile.
 
+warn: <true/yes/1>|<false/no/0>  
+  Whether to send an email to the user in case there was a job conflict.
+  Default is `true'.
+
 mail: never|always|error|output  
   When to send the output of the job via mail, either `never', `always', if
   an `error' occurred or if the job actually produced `output'.

@@ -375,7 +375,7 @@ class MailTest(_SchedulerTest):
 
         self.assertEqual(self.mail["CONFLICT SKIP"]["baz.1"], 3)
         self.assertEqual(self.mail["CONFLICT SKIP"]["baz.2"], 3)
-        self.assertEqual(self.mail["CONFLICT SKIP"]["baz.3"], 0)
+        self.assertEqual(self.mail["CONFLICT SKIP"]["baz.3"], 3)
 
         self.assertEqual(self.mail["INFO"]["qux.1"], 1)
         self.assertEqual(self.mail["INFO"]["qux.2"], 0)

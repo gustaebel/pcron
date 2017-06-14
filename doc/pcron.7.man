@@ -35,7 +35,7 @@ CONFLICTS
     - Con: Jobs may cumulate uncontrollably, creating a huge backlog.
     - When to use: Use when it is important that a job is run an exact number
       of times, and you're absolutely sure that congestion effects will resolve
-      by themselves over time.
+      over time.
 
   skip  
     The job is appended to the queue unless there is another instance of itself
@@ -44,7 +44,7 @@ CONFLICTS
     - Pro: Jobs will not cumulate uncontrollably.
     - Pro: Although the frequency may be lower, jobs are guaranteed to be run
       at some point.
-    - Con: Jobs may run less frequent.
+    - Con: Jobs may run less frequent than possibly intended.
 
   kill  
     The job is appended to the queue unless there is another instance of itself

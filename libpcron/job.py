@@ -46,7 +46,8 @@ class Job:
 
         ("condition",   String(default=None)),
         ("group",       String(default=lambda j: j.name, regex=_name_regex)),
-        ("conflict",    String(default="ignore", choices=("ignore", "skip", "mail", "kill"))),
+        ("conflict",    String(default="ignore", choices=("ignore", "skip", "kill"))),
+        ("warn",        Boolean(default=True)),
 
         ("time",        Time(default=None, schedule=True)),
         ("interval",    Interval(default=None, schedule=True)),
@@ -176,10 +177,16 @@ class Job:
     def has_finished(self):
         return self.runner is None or self.runner.has_finished()
 
+    def enqueue(self, queue):
+        """Put the job instance in a queue.
+        """
+        self.log.debug("enqueue (%s)", self.trigger)
+        queue.append(self)
+
     def start(self):
         """Start the job process.
         """
-        self.log.debug("start (%s)", self.trigger)
+        self.log.debug("start")
         if self.condition is None or self.test_condition():
             # Start the process.
             self.log.info("execute: %s", self.command)
