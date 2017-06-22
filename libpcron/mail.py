@@ -151,15 +151,27 @@ class Mailer:
             self.send_message(MAIL_SKIP_WAITING, new_job, old_job.runner if old_job is not None else None)
 
     def send_message(self, text, job, runner):
+        pid = -1
+        exitcode = -1
+        signal = "NONE"
+
+        if runner:
+            pid = runner.get_pid()
+
+            if runner.returncode is not None:
+                exitcode = runner.returncode
+                if exitcode < 0:
+                    signal = SIGNAL_NAMES[abs(exitcode)]
+
         text %= {
             "job":      str(job.id),
             "mailto":   job.mailto,
             "username": job.username,
             "timestamp": format_time(job.this_run),
             "command":  job.command,
-            "exitcode": runner.returncode if runner is not None else -1,
-            "signal":   SIGNAL_NAMES[abs(runner.returncode)] if runner and runner.returncode < 0 else "NONE",
-            "pid":      runner.get_pid() if runner is not None else -1,
+            "exitcode": exitcode,
+            "pid":      pid,
+            "signal":   signal,
             "encoding": self.encoding
         }
 

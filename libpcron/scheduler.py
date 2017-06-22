@@ -331,42 +331,6 @@ class Scheduler:
         queue = self.queues.get(job.group, [])
         names = set(j.name for j in queue)
 
-        if job.conflict == "kill":
-            if running_job is not None and running_job.name == job.name:
-                job.log.debug("queue %s blocked by %s", job.group, running_job)
-                running_job.log.warn("scheduling conflict: exceeding runtime -> kill")
-                running_job.terminate()
-                queue.append(job)
-                self.mailer.send_conflict_mail(job, running_job, True)
-            elif job.name in names:
-                job.log.debug("queue %s blocked by %s", job.group, list(j for j in queue if j.name == job.name)[0])
-                job.log.warn("scheduling conflict: wait congestion -> skip")
-                self.mailer.send_conflict_mail(job, running_job, False)
-            else:
-                queue.append(job)
-
-        elif job.conflict == "skip":
-            if running_job is not None and running_job.name == job.name:
-                job.log.debug("queue %s blocked by %s", job.group, running_job)
-                running_job.log.warn("scheduling conflict: exceeding runtime -> skip")
-                self.mailer.send_conflict_mail(job, running_job, True)
-            elif job.name in names:
-                job.log.debug("queue %s blocked by %s", job.group, list(j for j in queue if j.name == job.name)[0])
-                job.log.warn("scheduling conflict: wait congestion -> skip")
-                self.mailer.send_conflict_mail(job, running_job, False)
-            else:
-                queue.append(job)
-
-        else:
-            queue.append(job)
-
-        self.queues[job.group]= queue
-
-    def enqueue_job(self, job):
-        running_job = self.running.get(job.group)
-        queue = self.queues.get(job.group, [])
-        names = set(j.name for j in queue)
-
         if running_job is not None and running_job.name == job.name:
             job.log.debug("queue %s blocked by %s", job.group, running_job)
             running_job.log.warn("scheduling conflict: exceeding runtime -> %s" % job.conflict)
