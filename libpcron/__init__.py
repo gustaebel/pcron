@@ -26,4 +26,3 @@ ENVIRONMENT_NAME = "environment.sh"
 CRONTAB_NAME = "crontab.ini"
 PID_NAME = "pcron.pid"
 SUPPORTED_SHELLS = set(["sh", "bash", "ksh", "zsh", "dash"])
-

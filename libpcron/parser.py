@@ -19,20 +19,17 @@
 #
 # -----------------------------------------------------------------------
 
-import os
-import re
 import configparser
 import collections
 
 from .shared import CrontabError, CrontabEmptyError, Logger
-from .time import TimeSpec, TimeSpecError, IntervalSpec, IntervalSpecError
 
 
 def extract_loglevel_from_crontab(path):
     parser = configparser.RawConfigParser(default_section="default")
     try:
         parser.read([path])
-    except configparser.DuplicateSectionError as exc:
+    except configparser.DuplicateSectionError:
         pass
 
     value = parser.defaults().get("loglevel")
@@ -48,9 +45,9 @@ def extract_loglevel_from_crontab(path):
 
 class CrontabParser:
 
-    def __init__(self, path, Job):
+    def __init__(self, path, jobcls):
         self.path = path
-        self.Job = Job
+        self.jobcls = jobcls
 
         self.parser = configparser.ConfigParser(interpolation=None)
 
@@ -95,10 +92,9 @@ class CrontabParser:
         startup = collections.OrderedDict()
         jobs = collections.OrderedDict()
         for name, info in infos.items():
-            job = self.Job.new(name, info)
+            job = self.jobcls.new(name, info)
             if info.get("time") == "@reboot":
                 startup[name] = job
             else:
                 jobs[name] = job
         return startup, jobs
-

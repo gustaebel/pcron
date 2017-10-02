@@ -33,7 +33,7 @@ from .field import String, Boolean, Time, Interval, ListOfStrings
 class Job:
     """A class that contains a single job from a crontab.ini file.
     """
-    # pylint:disable=no-member
+    # pylint:disable=no-member,too-many-instance-attributes
 
     Runner = Runner
 
@@ -240,4 +240,3 @@ class Job:
 
         self.log.debug("test %r: false", self.condition)
         return False
-
