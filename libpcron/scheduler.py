@@ -266,7 +266,7 @@ class Scheduler:
         state_changed = False
         for job in list(self.running.values()):
             if job.has_finished():
-                self.running.pop(job.group)
+                self.running.pop(job.queue)
                 job.finalize()
                 self.mailer.send_job_mail(job)
                 job.close()
@@ -291,7 +291,7 @@ class Scheduler:
         for name, queue in sorted(self.queues.items(), reverse=False):
             if not queue:
                 continue
-            while queue and queue[0].group not in self.running:
+            while queue and queue[0].queue not in self.running:
                 job = queue.pop(0)
                 self.start_job(job)
 
@@ -324,15 +324,15 @@ class Scheduler:
 
     def start_job(self, job):
         if job.start():
-            self.running[job.group] = job
+            self.running[job.queue] = job
 
     def enqueue_job(self, job):
-        running_job = self.running.get(job.group)
-        queue = self.queues.get(job.group, [])
+        running_job = self.running.get(job.queue)
+        queue = self.queues.get(job.queue, [])
         names = set(j.name for j in queue)
 
         if running_job is not None and running_job.name == job.name:
-            job.log.debug("queue %s blocked by %s", job.group, running_job)
+            job.log.debug("queue %s blocked by %s", job.queue, running_job)
             running_job.log.warn("scheduling conflict: exceeding runtime -> %s" % job.conflict)
 
             if job.conflict == "kill":
@@ -345,7 +345,7 @@ class Scheduler:
                 self.mailer.send_conflict_mail(job, running_job, True)
 
         elif job.name in names:
-            job.log.debug("queue %s blocked by %s", job.group, list(j for j in queue if j.name == job.name)[0])
+            job.log.debug("queue %s blocked by %s", job.queue, list(j for j in queue if j.name == job.name)[0])
             job.log.warn("scheduling conflict: wait congestion -> skip")
 
             if job.conflict == "ignore":
@@ -357,5 +357,5 @@ class Scheduler:
         else:
             job.enqueue(queue)
 
-        self.queues[job.group]= queue
+        self.queues[job.queue]= queue
 

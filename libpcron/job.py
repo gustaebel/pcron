@@ -45,7 +45,7 @@ class Job:
         ("active",      Boolean(default=True)),
 
         ("condition",   String(default=None)),
-        ("group",       String(default=lambda j: j.name, regex=_name_regex)),
+        ("queue",       String(default=lambda j: j.name, regex=_name_regex)),
         ("conflict",    String(default="ignore", choices=("ignore", "skip", "kill"))),
         ("warn",        Boolean(default=True)),
 
@@ -101,16 +101,16 @@ class Job:
         self.runner = None
 
         self.environ = self.create_environ(self.directory, self.name,
-                                           self.id, self.group)
+                                           self.id, self.queue)
 
         self.working_dir = os.path.join(self.directory, "jobs", self.name)
         self.username = self.environ["USER"]
 
     @staticmethod
-    def create_environ(directory, name, id, group):
+    def create_environ(directory, name, id, queue):
         # Prepare a basic environment for the job.
         record = pwd.getpwuid(os.getuid())
-        return create_environ(record, PCRONDIR=directory, JOB_NAME=name, JOB_ID=id, JOB_GROUP=group)
+        return create_environ(record, PCRONDIR=directory, JOB_NAME=name, JOB_ID=id, JOB_QUEUE=queue)
 
     def __str__(self):
         return self.id

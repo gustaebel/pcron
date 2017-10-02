@@ -141,7 +141,7 @@ def execute(args):
     except EnvironmentError:
         init_code = ""
 
-    environ = Job.create_environ(args.directory, name, name + "-0", job.group)
+    environ = Job.create_environ(args.directory, name, name + "-0", job.queue)
 
     with tempfile.NamedTemporaryFile(prefix="tmp.pcron-cmd.", mode="w") as script:
         script.write(SHELL_CODE % (init_code, job.command))

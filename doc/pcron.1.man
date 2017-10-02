@@ -44,9 +44,9 @@ SUMMARY
     at the same time. Instead, to resolve possible conflicts, jobs will either
     be discarded or killed.
 
-  - pcron(1) allows queueing of jobs using groups. Jobs that belong to the same
-    group are scheduled to run one after the other. This is useful to reduce
-    system and network load.
+  - pcron(1) allows queueing of jobs. Jobs that belong to the same queue are
+    scheduled to run one after the other. This is useful to reduce system and
+    network load for jobs that use the same resource.
 
   - pcron(1) offers logging capabilities and a configurable email interface,
     that informs the user about successful and failed jobs and scheduling

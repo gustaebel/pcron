@@ -44,8 +44,8 @@ class TestScheduler(TestScheduler):
 class TestJob(Job):
 
     @staticmethod
-    def create_environ(directory, name, id, group):
-        environ = Job.create_environ(".".join(locale.getlocale()), directory, name, id, group)
+    def create_environ(directory, name, id, queue):
+        environ = Job.create_environ(".".join(locale.getlocale()), directory, name, id, queue)
         environ["SHELL"] = "/bin/non_existing_shell"
         return environ
 
