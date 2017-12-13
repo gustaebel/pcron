@@ -56,13 +56,21 @@ class Scheduler:
         if self.logfile is None:
             self.logfile = open(os.path.join(self.directory, "logfile.txt"), "a")
 
-        self.logger = Logger(self.time_provider, self.logfile,
-                             extract_loglevel_from_crontab(self.crontab_path))
+        try:
+            loglevel = extract_loglevel_from_crontab(self.crontab_path)
+        except CrontabError as exc:
+            log_exc = exc
+            loglevel = None
+
+        self.logger = Logger(self.time_provider, self.logfile, loglevel if loglevel else Logger.INFO)
 
         self.mailer = self.Mailer(self.logger)
 
         self.log = self.logger.new("main")
         self.log.info("started with pid %d", os.getpid())
+
+        if loglevel is None:
+            self.log.error(str(log_exc))
 
         self.running = {}
         self.queues = {}
