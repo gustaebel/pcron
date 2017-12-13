@@ -1,4 +1,4 @@
-.PHONY: all doc clean test-long test-short
+.PHONY: all doc clean test-long test-short lint
 
 all: doc test
 
@@ -21,3 +21,7 @@ test-long:
 
 test-short:
 	python3 -m unittest -v tests.test_pcron
+
+lint:
+	pylint --rcfile pylintrc pcron pcrond pcrontab libpcron
+
