@@ -74,21 +74,21 @@ queue: <name>
   scheduled one after the other being delayed if necessary. By default, every
   job runs in its own queue. See SCHEDULING AND QUEUES for more information.
 
-conflict: skip|mail|kill  
+conflict: ignore|skip|kill  
   Define which action to take when there is a scheduling conflict, i.e. a job
   is about to be scheduled while another instance of the same job is still
-  running or waiting. The default action is `mail'.
+  running or waiting. The default action is `ignore'.
+    - ignore: schedule new instances regardless of whether other instances are
+      running or waiting, with the risk of them piling up
     - skip: do not schedule new instances as long as another instance is
       running or waiting
-    - mail: the same as skip, but send a warning mail everytime a new instance
-      is discarded
     - kill: terminate the running or waiting instance and schedule the new one,
       send a warning mail, see SCHEDULING AND QUEUES for more information.
 
   In any case, a warning for each conflict is written to the logfile.
 
 warn: <true/yes/1>|<false/no/0>  
-  Whether to send an email to the user in case there was a job conflict.
+  Whether to send an email to the user in case there is a job conflict.
   Default is `true'.
 
 mail: never|always|error|output  
