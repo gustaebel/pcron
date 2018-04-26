@@ -22,6 +22,7 @@
 import os
 import pwd
 import signal
+import socket
 import collections
 
 from .time import format_time
@@ -55,7 +56,9 @@ class Job:
 
         ("mail",        String(default="error", choices=("never", "always", "error", "output"))),
         ("mailto",      String(default=pwd.getpwuid(os.getuid()).pw_name)),
-        ("sendmail",    String(default="/usr/lib/sendmail"))
+        ("sendmail",    String(default="/usr/bin/sendmail")),
+        ("username",    String(default=pwd.getpwuid(os.getuid()).pw_name)),
+        ("hostname",    String(default=socket.gethostname()))
     ])
 
     _serial = collections.Counter()

@@ -98,7 +98,13 @@ mail: never|always|error|output
 mailto: <email_address>  
   Send the job output to this email address. It defaults to the user's name.
 
-sendmail: /usr/sbin/sendmail  
+username: <name>  
+  The username that will appear in the subject of the mail.
+
+hostname: <name>  
+  The hostname that will appear in the subject of the mail.
+
+sendmail: /usr/bin/sendmail  
   The path to the sendmail(1) command.
 
 loglevel: quiet|info|debug

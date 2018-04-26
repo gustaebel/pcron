@@ -39,7 +39,7 @@ From: pcron <%(username)s>
 To: %(mailto)s
 Content-Type: text/plain; charset="%(encoding)s"
 Pcron-Status: INFO
-Subject: pcron: %(timestamp)s %(job)s
+Subject: pcron: %(username)s@%(hostname)s %(timestamp)s %(job)s
 
 """
 
@@ -48,7 +48,7 @@ From: pcron <%(username)s>
 To: %(mailto)s
 Content-Type: text/plain; charset="%(encoding)s"
 Pcron-Status: ERROR
-Subject: pcron: ERROR: %(timestamp)s %(job)s
+Subject: pcron: ERROR: %(username)s@%(hostname)s %(timestamp)s %(job)s
 
 Job %(job)s exited with error code %(exitcode)s.
 
@@ -59,7 +59,7 @@ From: pcron <%(username)s>
 To: %(mailto)s
 Content-Type: text/plain; charset="%(encoding)s"
 Pcron-Status: KILLED
-Subject: pcron: KILLED! %(timestamp)s %(job)s
+Subject: pcron: KILLED! %(username)s@%(hostname)s %(timestamp)s %(job)s
 
 Job %(job)s was killed by signal %(signal)s.
 
@@ -70,7 +70,7 @@ From: pcron <%(username)s>
 To: %(mailto)s
 Content-Type: text/plain; charset="%(encoding)s"
 Pcron-Status: CONFLICT SKIP
-Subject: pcron: WARNING! %(timestamp)s %(job)s
+Subject: pcron: WARNING! %(username)s@%(hostname)s %(timestamp)s %(job)s
 
 The scheduled run for job %(job)s was skipped because another instance
 of the job is already waiting to start.
@@ -81,7 +81,7 @@ From: pcron <%(username)s>
 To: %(mailto)s
 Content-Type: text/plain; charset="%(encoding)s"
 Pcron-Status: CONFLICT SKIP
-Subject: pcron: WARNING! %(timestamp)s %(job)s
+Subject: pcron: WARNING! %(username)s@%(hostname)s %(timestamp)s %(job)s
 
 The scheduled run for job %(job)s was skipped because another instance
 of the job is still running.
@@ -96,7 +96,7 @@ From: pcron <%(username)s>
 To: %(mailto)s
 Content-Type: text/plain; charset="%(encoding)s"
 Pcron-Status: CONFLICT KILL
-Subject: pcron: WARNING! %(timestamp)s %(job)s
+Subject: pcron: WARNING! %(username)s@%(hostname)s %(timestamp)s %(job)s
 
 Running job %(job)s was killed in favor of the new instance.
 """
@@ -167,6 +167,7 @@ class Mailer:
             "job":      str(job.id),
             "mailto":   job.mailto,
             "username": job.username,
+            "hostname": job.hostname,
             "timestamp": format_time(job.this_run),
             "command":  job.command,
             "exitcode": exitcode,
