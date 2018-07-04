@@ -51,12 +51,10 @@ def list_file(args, name):
 
 def edit_file(args, name):
     path = os.path.join(args.directory, name)
-
-    _, tmppath = tempfile.mkstemp(dir=args.directory, prefix=name, suffix=os.path.splitext(name)[1])
-    os.close(_)
+    tmppath = os.path.join(args.directory, "%s.tmp%s" % os.path.splitext(name))
 
     try:
-        with open(tmppath, "w") as tmp:
+        with open(tmppath, "x") as tmp:
             if args.action.startswith("edit"):
                 if os.path.exists(path):
                     with open(path, "r") as fileobj:
@@ -65,6 +63,10 @@ def edit_file(args, name):
                 # -i/--import, -I/--import-environment
                 tmp.write(sys.stdin.read())
 
+    except FileExistsError:
+        raise SystemExit("refusing to overwrite temporary file %r" % tmppath)
+
+    try:
         while True:
             if args.action.startswith("edit") and subprocess.call([args.editor, tmppath]) != 0:
                 print("an error occurred, discarding ...")
