@@ -67,7 +67,7 @@ class Job:
     # === Base methods
     #
     @classmethod
-    def new(cls, name, info):
+    def new(cls, name, info, is_parent):
         job = type(name, (cls,), {})
 
         info = info.copy()
@@ -85,7 +85,7 @@ class Job:
         for key in info:
             raise CrontabError("variable %r not allowed" % key)
 
-        if not has_schedule:
+        if not has_schedule and not is_parent:
             raise CrontabError("missing scheduling information")
 
         job.last_run = None

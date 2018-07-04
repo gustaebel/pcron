@@ -63,6 +63,7 @@ class CrontabParser:
         if not self.parser.sections():
             raise CrontabEmptyError("crontab is empty")
 
+        parents = set()
         infos = collections.OrderedDict()
         for name in self.parser.sections():
             try:
@@ -72,6 +73,7 @@ class CrontabParser:
             else:
                 if parent in infos:
                     info = infos[parent].copy()
+                    parents.add(parent)
                 else:
                     raise CrontabError("missing parent job %s" % parent)
 
@@ -92,7 +94,7 @@ class CrontabParser:
         startup = collections.OrderedDict()
         jobs = collections.OrderedDict()
         for name, info in infos.items():
-            job = self.jobcls.new(name, info)
+            job = self.jobcls.new(name, info, name in parents)
             if info.get("time") == "@reboot":
                 startup[name] = job
             else:
