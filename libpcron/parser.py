@@ -97,4 +97,10 @@ class CrontabParser:
                 startup[name] = job
             else:
                 jobs[name] = job
+
+            if job.active:
+                posts = set(job.post) - set(infos.keys())
+                if posts:
+                    raise CrontabError("post job %s not found" % sorted(posts)[0])
+
         return startup, jobs
