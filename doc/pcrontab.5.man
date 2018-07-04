@@ -63,11 +63,11 @@ post: <job-id> [<job-id> ...]
   scheduled as soon as the other jobs have ended.
 
 condition: <shell_command>  
-  Make the actual execution of the job conditional on the exit status of a shell
-  command which is evaluated right before the job is about to start.  Please
-  note, that the shell command is executed synchronously and blocks the entire
-  pcron(1) process until it returns, which is why you should keep its running
-  time to a few seconds at most.
+  Make the actual execution of the job conditional on the exit status of a
+  shell command which is evaluated right before the job is about to start.
+  Please note, that the shell command is executed synchronously and blocks the
+  entire pcron(1) process until it returns, which is why you should keep its
+  running time to a few seconds at most.
 
 queue: <name>  
   Add the job to the queue with this name. Jobs in the same queue will be
